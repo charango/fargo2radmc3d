@@ -1,8 +1,8 @@
 # =================================================================== 
 #                        FARGO2D to RADMC3D
-# contributing authors by alphabetical order:
-# Clement Baruteau (CB), Marcelo Barraza (MB), Simon Casassus (SC), 
-# Sebastian Perez (SP) and Gaylor Wafflard-Fernandez (GWF)
+# contributing authors:
+# Clement Baruteau (CB), Sebastian Perez (SP), Marcelo Barraza (MB), 
+# Simon Casassus (SC) and Gaylor Wafflard-Fernandez (GWF)
 # =================================================================== 
 # 
 # present program can run with either Python 2.X or Python 3.X.
@@ -26,10 +26,6 @@
 # =========================================
 #            TO DO LIST
 # =========================================
-# - should I really use temperature from MC thermal simulation and not the
-# gas temperature out of the hydro simulation? -> try to have an optional flag
-# to use the gas temperature and put it in a dust_temperature.dat file.
-# - issue with the grid? r, theta, phi and not R(cylindrical radius), theta, phi -> issue with z in z_expansion? 
 # - check that all goes well without x-axisflip!
 # =========================================
 
