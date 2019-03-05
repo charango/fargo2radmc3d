@@ -1,7 +1,8 @@
 # =================================================================== 
-#                         FARGO2D to RADMC3D
-#                 originally written by Sebastian Perez (SP)
-#              with modifications made by Clement Baruteau (CB)
+#                        FARGO2D to RADMC3D
+# contributing authors by alphabetical order:
+# Clement Baruteau (CB), Marcelo Barraza (MB), Simon Casassus (SC), 
+# Sebastian Perez (SP) and Gaylor Wafflard-Fernandez (GWF)
 # =================================================================== 
 # 
 # present program can run with either Python 2.X or Python 3.X.
@@ -25,8 +26,6 @@
 # =========================================
 #            TO DO LIST
 # =========================================
-# - work out dustopac.inp file when we don't recalculate opacities (make
-# sure the number of bins is correct)
 # - should I really use temperature from MC thermal simulation and not the
 # gas temperature out of the hydro simulation? -> try to have an optional flag
 # to use the gas temperature and put it in a dust_temperature.dat file.
@@ -35,6 +34,9 @@
 # =========================================
 
 
+# -----------------------------
+# Requires librairies
+# -----------------------------
 import numpy as np
 import matplotlib
 #matplotlib.use('Agg')         # SP
@@ -48,9 +50,19 @@ import subprocess
 from astropy.io import fits
 import matplotlib
 import re
-from astropy.convolution import convolve
+from astropy.convolution import convolve, convolve_fft
 from matplotlib.colors import LinearSegmentedColormap
 import psutil
+import os.path
+from scipy import ndimage
+from copy import deepcopy
+from astropy.wcs import WCS
+import scipy as sp
+from scipy.ndimage import map_coordinates
+from pylab import *
+import matplotlib.colors as colors
+from makedustopac import *
+
 
 # -----------------------------
 # global constants in cgs units
@@ -110,13 +122,20 @@ class Mesh():
         # ie anisotropic scattering is assumed. We need to define the grid's colatitude on
         # both sides about the disc midplane (defined where theta = pi/2)
         #
-        # thmin is set as ~pi/2+atan(2.0*h) with h the gas aspect ratio (-> z_max ~ 2H_gas)
-        thmin = np.pi/2. - math.atan(2.0*aspectratio)
+        # thmin is set as pi/2+atan(zmax_over_H*h) with h the gas aspect ratio
+        # zmax_over_H = z_max_grid / pressure scale height, value set in params.dat
+        thmin = np.pi/2. - math.atan(zmax_over_H*aspectratio)
         thmax = np.pi/2.
-        # first define array of colatitudes above midplane
-        ymp = np.linspace(np.log10(thmin),np.log10(thmax),self.ny//2+1)
-        # refine towards the midplane
-        ym_lower = -1.0*10**(ymp)+thmin+thmax 
+        if polarized_scat == 'No':
+            # first define array of colatitudes above midplane
+            ymp = np.linspace(np.log10(thmin),np.log10(thmax),self.ny//2+1)
+            # refine towards the midplane
+            ym_lower = -1.0*10**(ymp)+thmin+thmax
+        else:
+            # first define array of colatitudes above midplane
+            ymp = np.linspace(thmin,thmax,self.ny//2+1)
+            # no refinement towards the midplane
+            ym_lower = -ymp+thmin+thmax
         # then define array of colatitudes below midplane
         ym_upper = np.pi-ym_lower[1:self.ny//2+1]
         # and finally concatenate
@@ -200,7 +219,7 @@ class Field(Mesh):
 # ---------------------
 class RTmodel():
     def __init__(self, distance = 140, label='', npix=256, Lambda=800,
-                 incl=30.0, posang=0.0, phi=0.0, Loadlambda = 0,
+                 incl=30.0, posang=0.0, phi=0.0,
                  line = '12co', imolspec=1, iline=3, linenlam=80, widthkms=4,):
         
         # disk parameters
@@ -208,7 +227,6 @@ class RTmodel():
         self.label = label
         # RT pars
         self.Lambda = Lambda
-        self.Loadlambda = Loadlambda
         self.line = line
         self.npix   = npix
         self.incl   = incl
@@ -229,45 +247,82 @@ def run_mctherm():
    
 def run_raytracing(M):
     command='radmc3d image lambda '+str(M.Lambda)+' npix '+str(M.npix)+' incl '+str(M.incl)+' posang '+str(M.posang)+' phi '+str(M.phi)
-    if M.Loadlambda==1:
-        command='radmc3d image loadlambda npix '+str(M.npix)+' incl '+str(M.incl)+' posang '+str(M.posang)+' phi '+str(M.phi)
+    if plot_tau == 'Yes':
+        command='radmc3d image tracetau lambda '+str(M.Lambda)+' npix '+str(M.npix)+' incl '+str(M.incl)+' posang '+str(M.posang)+' phi '+str(M.phi)
+    if polarized_scat == 'Yes':
+        command=command+' stokes'
     if secondorder == 'Yes':
         command=command+' secondorder'
-        
     print(command)
     os.system(command)
 
+def write_radmc3d_script():
+    command ='radmc3d image lambda '+str(wavelength*1e3)+' npix '+str(nbpixels)+' incl '+str(inclination)+' posang '+str(posangle+90.0)+' phi '+str(phiangle)
+    if plot_tau == 'Yes':
+        command ='radmc3d image tracetau lambda '+str(wavelength*1e3)+' npix '+str(nbpixels)+' incl '+str(inclination)+' posang '+str(posangle+90.0)+' phi '+str(phiangle)
+    if polarized_scat == 'Yes':
+        command=command+' stokes'
+    if secondorder == 'Yes':
+        command=command+' secondorder'
+    SCRIPT = open('script_radmc','w')
+    SCRIPT.write('radmc3d mctherm; '+command)
+    SCRIPT.close()
+    os.system('chmod a+x script_radmc')
+    
 
 # -------------------------
 # Convert result of RADMC3D calculation into fits file
 # -------------------------
-def exportfits(M, Plot=False):
-
-    outfile = 'image_'+str(M.label)+'_lbda'+str(wavelength)+'_i'+str(inclination)+'_phi'+str(M.phi)+'_PA'+str(posangle)+'.fits'
+def exportfits(M):
+    # name of .fits file where data is output
+    if plot_tau == 'No':
+        outfile = 'image_'+str(M.label)+'_lbda'+str(wavelength)+'_i'+str(inclination)+'_phi'+str(M.phi)+'_PA'+str(posangle)
+    else:
+        outfile = 'tau_'+str(M.label)+'_lbda'+str(wavelength)+'_i'+str(inclination)+'_phi'+str(M.phi)+'_PA'+str(posangle)
     if secondorder == 'Yes':
-        outfile = 'image_'+str(M.label)+'_lbda'+str(wavelength)+'_i'+str(inclination)+'_phi'+str(M.phi)+'_PA'+str(posangle)+'_secondorder.fits'
-    
-    infile = 'image.out'
-    
+        outfile = outfile+'_so'
+    outfile = outfile+'.fits'
     LOG = open('fluxlog.txt','a')
     LOG.write(outfile+"\n")
 
+    # input file produced by radmc3D
+    infile = 'image.out'
     # read header info:
     f = open(infile,'r')
     iformat = int(f.readline())
     # nb of pixels
     im_nx, im_ny = tuple(np.array(f.readline().split(),dtype=int))  
     # nb of wavelengths
-    nlam = int(f.readline())
+    nlam = int(f.readline())    # always = 1, no multiple wavelengths allowed
     # pixel size in each direction in cm
-    pixsize_x, pixsize_y = tuple(np.array(f.readline().split(),dtype=float))  
-    lbda = np.empty(nlam)
-    for i in range(nlam):
-        lbda[i] = float(f.readline())
+    pixsize_x, pixsize_y = tuple(np.array(f.readline().split(),dtype=float))
+    # read wavelength in microns
+    lbda = float(f.readline())
     f.readline()                # empty line
 
     # load image data
-    images = np.loadtxt(infile, skiprows=(5+nlam))
+    if polarized_scat == 'No':
+        images = np.loadtxt(infile, skiprows=6)
+        im = images.reshape(im_ny,im_nx)
+        naxis = 2
+    if polarized_scat == 'Yes':
+        naxis = 3
+        images = np.zeros((5*im_ny*im_nx))
+        im = images.reshape(5,im_ny,im_nx)
+        for j in range(im_ny):
+            for i in range(im_nx):
+                line = f.readline()
+                dat = line.split()
+                im[0,j,i] = float(dat[0]) # I
+                im[1,j,i] = float(dat[1]) # Q
+                im[2,j,i] = float(dat[2]) # U
+                im[3,j,i] = float(dat[3]) # V
+                im[4,j,i] = math.sqrt(float(dat[1])**2.0+float(dat[2])**2.0) # P
+                if (j == im_ny-1) and (i == im_nx-1):
+                    f.readline()     # empty line
+            
+    # close image file
+    f.close()
 
     # calculate physical scales
     distance = M.distance          # distance is in cm here
@@ -278,83 +333,58 @@ def exportfits(M, Plot=False):
     pixsurf_ster = pixsize_x_deg*pixsize_y_deg * (pi/180.)**2
     # 1 Jansky converted in cgs x pixel surface in cm^2
     fluxfactor = 1.e23 * pixsurf_ster
-    
-    if nlam>1:
-        print("multiple ("+str(nlam)+") lambdas:")
-        print(lbda)
-        im = images.reshape(nlam,im_ny,im_nx)
-        naxis = 3
-    else:
-        im = images.reshape(im_ny,im_nx)
-        naxis = 2
-    
-    if Plot:
-        import matplotlib.pyplot as plt
-        plt.imshow(im, cmap = 'plasma', origin='lower',aspect='auto')
-        plt.axis('equal')
-        plt.show()
 
+    # Fits header
     hdu = fits.PrimaryHDU()
-
-    # hdu.header['SIMPLE'] = 'T       '; # makes simobserve crash
     hdu.header['BITPIX'] = -32
-    
-    hdu.header['NAXIS'] = naxis
+    hdu.header['NAXIS'] = 4 # naxis
     hdu.header['NAXIS1'] = im_nx
     hdu.header['NAXIS2'] = im_ny
+    hdu.header['NAXIS3'] = 1
+    hdu.header['NAXIS4'] = 1
     hdu.header['EPOCH']  = 2000.0
     hdu.header['EQUINOX'] = 2000.0
     hdu.header['LONPOLE'] = 180.0
-    # hdu.header['SPECSYS'] = 'LSRK    '
-    hdu.header['CTYPE1'] = 'RA---TAN'
-    hdu.header['CTYPE2'] = 'DEC--TAN'
-    hdu.header['CRVAL1'] = float(0.0)
-    hdu.header['CRVAL2'] = float(0.0)
+    hdu.header['CTYPE1'] = 'RA---SIN'
+    hdu.header['CTYPE2'] = 'DEC--SIN'
+    hdu.header['CTYPE3'] = 'FREQ'
+    hdu.header['CTYPE4'] = 'STOKES'
+    hdu.header['CRVAL1'] = 8.261472379700E+01 # float(0.0)
+    hdu.header['CRVAL2'] = 2.533239051468E+01 # float(0.0)
+    hdu.header['CRVAL3'] = 33.0E+09
+    hdu.header['CRVAL4'] = 1.0E+00
     hdu.header['CDELT1'] = float(-1.*pixsize_x_deg)
     hdu.header['CDELT2'] = float(pixsize_y_deg)
-    hdu.header['CUNIT1'] = 'DEG     '
-    hdu.header['CUNIT2'] = 'DEG     '
+    hdu.header['CDELT3'] = 8.05E+09
+    hdu.header['CDELT4'] = 1.0E+00
+    hdu.header['CUNIT1'] = 'deg     '
+    hdu.header['CUNIT2'] = 'deg     '
+    hdu.header['CUNIT3'] = 'Hz     '
+    hdu.header['CUNIT4'] = ' '
     hdu.header['CRPIX1'] = float((im_nx+1.)/2.)
     hdu.header['CRPIX2'] = float((im_ny+1.)/2.)
-
     hdu.header['BUNIT'] = 'JY/PIXEL'
     hdu.header['BTYPE'] = 'Intensity'
     hdu.header['BSCALE'] = 1
     hdu.header['BZERO'] = 0
+    del hdu.header['EXTEND']
 
     # keep track of all parameters in params.dat file
-    for i in range(len(lines_params)):
-        hdu.header[var[i]] = par[i]
-
+    #for i in range(len(lines_params)):
+    #    hdu.header[var[i]] = par[i]
     LOG.write('pixsize '+str(pixsize_x_deg*3600.)+"\n")
 
-    if nlam > 1:
-        restfreq = c * 1.e4 / lbda[int((nlam+1.)/2.)] # micron to Hz
-        nus = c * 1.e4 / lbda                         # Hx 
-        dnu = nus[1] - nus[0]
-        hdu.header['NAXIS3'] = int(nlam)
-        hdu.header['CTYPE3'] = 'FREQ    '
-        hdu.header['CUNIT3'] = 'Hz      '
-        hdu.header['CRPIX3'] = float((nlam+1.)/2.)
-        hdu.header['CRVAL3'] = float(restfreq)
-        hdu.header['CDELT3'] = float(dnu)
-        hdu.header['RESTFREQ'] = float(restfreq)
-
     # conversion of the intensity from erg/s/cm^2/steradian to Jy/pix
-    im = im*fluxfactor
+    if plot_tau == 'No':
+        im = im*fluxfactor
+
     hdu.data = im.astype('float32')
 
-    if nlam>1:
-        print("reporting fluxes")
-        for i in range(nlam):
-            iflux = np.sum(hdu.data[i,:,:])
-            print("F("+str(lbda[i])+") = "+str(iflux))
-            LOG.write("F("+str(lbda[i])+") = "+str(iflux)+"\n")
-    else:
+    if plot_tau == 'No':
         print("Total flux [Jy] = "+str(np.sum(hdu.data)))
         LOG.write('flux '+str(np.sum(hdu.data))+"\n")
-
     LOG.close()
+    
     hdu.writeto(outfile, output_verify='fix', overwrite=True)
     return outfile
 
@@ -403,7 +433,7 @@ def Gauss_filter(img, stdev_x, stdev_y, PA, Plot=False):
         plt.imshow(Z, cmap=cm.jet)
         plt.show()
                 
-    result = convolve(data, Z, boundary='extend')
+    result = convolve_fft(data, Z, boundary='fill', fill_value=0.0)
 
     if Plot==True:
         plt.imshow(result, cmap=cm.magma)
@@ -413,112 +443,26 @@ def Gauss_filter(img, stdev_x, stdev_y, PA, Plot=False):
 
 
 # -------------------------------------------------------------------  
-# produce the dust kappa files
-# requires the .lnk files and the bhmie.f code inside a folder
-# called opac
-# -------------------------------------------------------------------  
-def make_dustkappa(species='Draine_Si', amin=0.1, amax=1000,
-                   graindens=2.0, nbins=20, abin = 0, alpha=3.5):
-
-    print('making dustkappa files')
-
-    currentdir = os.getcwd()
-    # we need to have a global extension for the opacity directory
-    opacdir = os.path.expanduser(opacity_dir)    
-    command = "cd "+opacdir+"; make clean; make"
-    os.system(command)
-    os.chdir(opacdir)
-    
-    pathout='dustkappa_'+species+str(abin)+'.inp'
-    lnk_file=species
-    Type=species
-    Pa=(amax/amin)**(1.0/(nbins-1.0))
-
-    A=np.zeros(nbins)
-    A[0]=amin
-
-    for i in range(nbins):
-        command = 'rm -f param.inp'
-        os.system(command)
-        A[i]=amin*(Pa**(i))
-        acm=A[i]*10.0**(-4.0)    # in cm
-        print("a = %1.2e um"  %A[i])
-        file_inp=open('param.inp','w')
-        file_inp.write(lnk_file+'\n')
-        e=round(np.log10(acm))
-        b=acm/(10.0**e)
-        file_inp.write('%1.2fd%i \n' %(b,e))
-        file_inp.write('%1.2f \n' %graindens) 
-        file_inp.write('1')
-        
-        file_inp.close()
-        os.system('./makeopac')
-        os.system('mv dustkappa_'+lnk_file+'.inp dustkappa_'+Type+'_'+str(i+1)+'.inp ') 
-
-
-    #--------- READ OPACITIES AND COMPUTE MEAN OPACITY
-
-    # read number of wavelengths
-    opct=np.loadtxt(lnk_file+'.lnk')
-    Nw=len(opct[:,0])
-        
-    Op=np.zeros((Nw,4))         # wl, kappa_abs, kappa_scat, g 
-    Op[:,0]=opct[:,0]
-
-    Ws_mass=np.zeros(nbins)     # weigths by mass and abundances
-    for i in range(nbins):
-        Ws_mass[i] = (A[i]**(-alpha))*(A[i]**(3.0))*A[i]  # w(a) propto n(a)*m(a)*da and da propto a
-
-    W_mass = Ws_mass/np.sum(Ws_mass)
-
-    for i in range(nbins):
-        file_inp=open('dustkappa_'+Type+'_'+str(i+1)+'.inp','r')
-        file_inp.readline()
-        file_inp.readline()
-
-        for j in range(Nw):
-            line=file_inp.readline()
-            dat=line.split()
-            kabs=float(dat[1])
-            kscat=float(dat[2])
-            g=float(dat[3])
-
-            Op[j,1]+=kabs*W_mass[i]
-            Op[j,2]+=kscat*W_mass[i]
-            Op[j,3]+=g*W_mass[i] 
-                
-        file_inp.close()
-        os.system('rm dustkappa_'+Type+'_'+str(i+1)+'.inp')
-
-    #---------- WRITE MEAN OPACITY
-    final=open(pathout,'w')
-
-    final.write('3 \n')
-    final.write(str(Nw)+'\n')
-    for i in range(Nw):
-        final.write('%f \t %f \t %f \t %f\n' %(Op[i,0],Op[i,1],Op[i,2],Op[i,3]))
-    final.close()
-
-    os.system('mv '+pathout+' '+currentdir)
-    os.chdir(currentdir)
-
-
-# -------------------------------------------------------------------  
 # writing dustopac
 # -------------------------------------------------------------------  
-def write_dustopac(species=['ac_opct', 'Draine_Si']):
-    nspec = len(species)
-    print('writing dust opacity out')
-    hline="-----------------------------------------------------------------------------\n"
-    OPACOUT=open('dustopac.inp','w')
-    lines0=["2               iformat (2)\n",
-            str(nspec)+"               species\n",
+def write_dustopac(species=['ac_opct', 'Draine_Si'],nbin=20):
+    print('writing dustopac.inp')
+    hline = "-----------------------------------------------------------------------------\n"
+    OPACOUT = open('dustopac.inp','w')
+
+    lines0=["2 \t iformat (2)\n",
+            str(nbin)+" \t species\n",
             hline]
     OPACOUT.writelines(lines0)
-    for i in range(nspec):
-        lines=["1               in which form the dust opacity of dust species is to be read\n",
-               "0               0 = thermal grains\n",
-               species[i]+"         dustkappa_***.inp file\n",
+    # put first element to 10 if dustkapscatmat_species.inp input file, or 1 if dustkappa_species.inp input file
+    if (scat_mode >= 3):
+        inputstyle = 10
+    else:
+        inputstyle = 1
+    for i in range(nbin):
+        lines=[str(inputstyle)+" \t in which form the dust opacity of dust species is to be read\n",
+               "0 \t 0 = thermal grains\n",
+               species+str(i)+" \t dustkap***.inp file\n",
                hline
            ]
         OPACOUT.writelines(lines)
@@ -526,9 +470,44 @@ def write_dustopac(species=['ac_opct', 'Draine_Si']):
 
 
 # -------------------------------------------------------------------  
+# read opacities
+# -------------------------------------------------------------------  
+def read_opacities(filein):
+    params = open(filein,'r')
+    lines_params = params.readlines()
+    params.close()                 
+    lbda = []                  
+    kappa_abs = []               
+    kappa_sca = []
+    g = []
+    for line in lines_params:      
+        try:
+            line.split()[0][0]     # check if blank line (GWF)
+        except:
+            continue
+        if (line.split()[0][0]=='#'): # check if line starts with a # (comment)
+            continue
+        else:
+            if (len(line.split()) == 4):
+                l, a, s, gg = line.split()[0:4]
+            else:
+                continue
+        lbda.append(float(l))
+        kappa_abs.append(float(a))
+        kappa_sca.append(float(s))
+        g.append(float(gg))
+
+    lbda = np.asarray(lbda)
+    kappa_abs = np.asarray(kappa_abs)
+    kappa_sca = np.asarray(kappa_sca)
+    g = np.asarray(g)
+    return [lbda,kappa_abs,kappa_sca,g]
+
+
+# -------------------------------------------------------------------  
 # plotting opacities
 # -------------------------------------------------------------------  
-def plot_opacities(species='mix_2species_porous',amin=0.1,amax=1000,nbin=10):
+def plot_opacities(species='mix_2species_porous',amin=0.1,amax=1000,nbin=10,lbda1=1e-3):
     ax = plt.gca()
     ax.tick_params(axis='both',length = 10, width=1)
 
@@ -536,20 +515,18 @@ def plot_opacities(species='mix_2species_porous',amin=0.1,amax=1000,nbin=10):
     plt.ylabel(r'Opacities $[{\rm cm}^2\;{\rm g}^{-1}]$')
 
     absorption1 = np.zeros(nbin)
-    absorption2 = np.zeros(nbin)
     scattering1 = np.zeros(nbin)
-    scattering2 = np.zeros(nbin)
     sizes = np.logspace(np.log10(amin), np.log10(amax), nbin)
 
-    lbda1 = 870.  # 0.87 mm in microns
-    lbda2 = 9000. # 9 mm in microns
-
     for k in range(nbin):
-        file = 'dustkappa_'+species+str(k)+'.inp'
-        (lbda, kappa_abs, kappa_sca, g) = np.loadtxt(file, unpack=True, skiprows=2)
-
+        if polarized_scat == 'No':
+            filein = 'dustkappa_'+species+str(k)+'.inp'
+        else:
+            filein = 'dustkapscatmat_'+species+str(k)+'.inp'
+        (lbda, kappa_abs, kappa_sca, g) = read_opacities(filein)
+        #(lbda, kappa_abs, kappa_sca, g) = np.loadtxt(filein, unpack=True, skiprows=2)
+        
         i1 = np.argmin(np.abs(lbda-lbda1))
-        i2 = np.argmin(np.abs(lbda-lbda2))
 
         # interpolation in log
         l1 = lbda[i1-1]
@@ -560,16 +537,7 @@ def plot_opacities(species='mix_2species_porous',amin=0.1,amax=1000,nbin=10):
         ks2 = kappa_sca[i1+1]
         absorption1[k] =  (k1*np.log(l2/lbda1) +  k2*np.log(lbda1/l1))/np.log(l2/l1)
         scattering1[k] = (ks1*np.log(l2/lbda1) + ks2*np.log(lbda1/l1))/np.log(l2/l1)
-        #
-        l1 = lbda[i2-1]
-        l2 = lbda[i2+1]
-        k1 = kappa_abs[i2-1]
-        k2 = kappa_abs[i2+1]
-        ks1 = kappa_sca[i2-1]
-        ks2 = kappa_sca[i2+1]
-        absorption2[k] =  (k1*np.log(l2/lbda2) +  k2*np.log(lbda2/l1))/np.log(l2/l1)
-        scattering2[k] = (ks1*np.log(l2/lbda2) + ks2*np.log(lbda2/l1))/np.log(l2/l1)
-
+        
     # nice colors 
     c20 = [(31, 119, 180), (174, 199, 232), (255, 127, 14), (255, 187, 120),    
            (44, 160, 44), (152, 223, 138), (214, 39, 40), (255, 152, 150),    
@@ -583,19 +551,16 @@ def plot_opacities(species='mix_2species_porous',amin=0.1,amax=1000,nbin=10):
         c20[i] = (r / 255., g / 255., b / 255.) 
 
     lbda1 *= 1e-3  # in mm
-    lbda2 *= 1e-3  # in mm
 
     plt.loglog(sizes, absorption1, lw=2., linestyle = 'solid', color = c20[1], label='$\kappa_{abs}$ at '+str(lbda1)+' mm')
-    plt.loglog(sizes, absorption2, lw=2., linestyle = 'solid', color = c20[3], label='$\kappa_{abs}$ at '+str(lbda2)+' mm')
     plt.loglog(sizes, absorption1+scattering1, lw=2., linestyle = 'dashed', color = c20[1], label='$\kappa_{abs}$+$\kappa_{sca}$ at '+str(lbda1)+' mm')
-    plt.loglog(sizes, absorption2+scattering2, lw=2., linestyle = 'dashed', color = c20[3], label='$\kappa_{abs}$+$\kappa_{sca}$ at '+str(lbda2)+' mm')
     plt.legend()
 
-    plt.ylim(1e-2,1e2)
+    plt.ylim(absorption1.min(),(absorption1+scattering1).max())
     filesaveopac = 'opacities_'+species+'.pdf'
     plt.savefig('./'+filesaveopac, bbox_inches='tight', dpi=160)
     plt.clf()
-    
+
 
 # ---------------------------------------
 # write spatial grid in file amr_grid.inp
@@ -715,7 +680,7 @@ def write_radmc3dinp(incl_dust = 1,
                      setthreads=2,
                      rto_style=3 ):
 
-    print('writing radmc3d.inp out')
+    print('writing radmc3d.inp')
 
     RADMCINP = open('radmc3d.inp','w')
     inplines = ["incl_dust = "+str(int(incl_dust))+"\n",
@@ -737,6 +702,174 @@ def write_radmc3dinp(incl_dust = 1,
 
 
 # -----------------------------------------------------
+# Main routine to deproject cartesian flux maps onto polar maps (SC, SP)
+# -----------------------------------------------------
+def exec_polar_expansions(filename_source,workdir,PA,cosi,RA=False,DEC=False,alpha_min=False,Delta_min=False,XCheckInv=False,DoRadialProfile=True,ProfileExtractRadius=-1,DoAzimuthalProfile=False,PlotRadialProfile=True,a_min=-1,a_max=-1,zoomfactor=1.):
+
+    fieldscale=2. # shrink radial field of view of polar maps by this factor
+
+    if workdir[-1] != '/':
+        workdir += '/'
+    os.system("rm -rf mkdir "+workdir)
+    os.system("mkdir "+workdir)
+    inbasename=os.path.basename(filename_source)
+    filename_fullim=re.sub('.fits', '_fullim.fits', inbasename)
+    filename_fullim=workdir+filename_fullim
+    
+    hdu0 = fits.open(filename_source)
+    hdr0 = hdu0[0].header
+    # copy content of original fits file
+    os.system("rsync -va "+filename_source+" "+filename_fullim)
+    hdu = fits.open(filename_fullim)
+    im1=hdu[0].data
+    hdr1=hdu[0].header
+
+    if (not (isinstance(Delta_min,bool))):
+        if (isinstance(RA,bool)):
+            if (not RA):
+                RA=hdr1['CRVAL1']
+                DEC=hdr1['CRVAL2']
+        
+        RA=RA+(np.sin(alpha_min*np.pi/180.)*Delta_min/3600.)/np.cos(DEC*np.pi/180.)
+        DEC=DEC+np.cos(alpha_min*np.pi/180.)*Delta_min/3600.
+
+    elif (not isinstance(RA,float)):
+        sys.exit("must provide a center")
+
+    nx=int(hdr1['NAXIS1']/zoomfactor)   # zoomfactor = 1 in practice
+    ny=nx
+    if ( (nx % 2) == 0):
+        nx=nx+1
+        ny=ny+1
+
+    hdr2 = deepcopy(hdr1)    
+    hdr2['NAXIS1']=nx
+    hdr2['NAXIS2']=ny
+    hdr2['CRPIX1']=(nx+1)/2
+    hdr2['CRPIX2']=(ny+1)/2
+    hdr2['CRVAL1']=RA
+    hdr2['CRVAL2']=DEC
+
+    resamp=gridding(filename_fullim,hdr2, fullWCS=False)
+    fileout_centered=re.sub('fullim.fits', 'centered.fits', filename_fullim)
+    fits.writeto(fileout_centered,resamp, hdr2, overwrite=True)
+
+    # First rotate original, centred image by position angle
+    rotangle = PA
+    im1rot = ndimage.rotate(resamp, rotangle, reshape=False)
+    fileout_rotated=re.sub('fullim.fits', 'rotated.fits', filename_fullim)
+    fits.writeto(fileout_rotated,im1rot, hdr2, overwrite=True)
+    hdr3 = deepcopy(hdr2)
+    hdr3['CDELT1']=hdr3['CDELT1']*cosi
+
+    # Then deproject with inclination via hdr3
+    im3=gridding(fileout_rotated,hdr3)
+    fileout_stretched=re.sub('fullim.fits', 'stretched.fits', filename_fullim)
+    fits.writeto(fileout_stretched,im3, hdr2, overwrite=True)
+
+    # Finally work out polar transformation
+    im_polar = sp.ndimage.geometric_transform(im3,cartesian2polar, 
+                                              order=1,
+                                              output_shape = (im3.shape[0], im3.shape[1]),
+                                              extra_keywords = {'inputshape':im3.shape,'fieldscale':fieldscale,
+                                                                'origin':(((nx+1)/2)-1,((ny+1)/2)-1)}) 
+    
+    nphis,nrs=im_polar.shape
+    
+    hdupolar = fits.PrimaryHDU()
+    hdupolar.data = im_polar
+    hdrpolar=hdupolar.header
+    hdrpolar['CRPIX1']=1
+    hdrpolar['CRVAL1']=0.
+    hdrpolar['CDELT1']=2. * np.pi / nphis
+    hdrpolar['CRPIX2']=1
+    hdrpolar['CRVAL2']=0.
+    hdrpolar['CDELT2']=(hdr3['CDELT2'] / fieldscale)
+    hdupolar.header = hdrpolar
+    
+    fileout_polar=re.sub('fullim.fits', 'polar.fits', filename_fullim)
+    hdupolar.writeto(fileout_polar, overwrite=True)
+
+
+# --------------------
+#Function required in exec_polar_expansions
+# -------------------- 
+def datafits(namefile):
+    """
+    Open a FITS image and return datacube and header.
+    """
+    datacube = fits.open(namefile)[0].data
+    hdr = fits.open(namefile)[0].header
+    return datacube, hdr
+
+# --------------------
+#Function required in exec_polar_expansions
+# -------------------- 
+def gridding(imagefile_1, imagefile_2,fileout=False,fullWCS=True):
+    """
+    Interpolates Using ndimage and astropy.wcs for coordinate system.
+    """
+    if (isinstance(imagefile_1,str)):
+        im1, hdr1 = datafits(imagefile_1)
+    elif (isinstance(imagefile_1,fits.hdu.image.PrimaryHDU)):
+        im1 = imagefile_1.data
+        hdr1 = imagefile_1.header
+    elif (isinstance(imagefile_1,fits.hdu.hdulist.HDUList)):
+        im1 = imagefile_1[0].data
+        hdr1 = imagefile_1[0].header
+    else:
+        sys.exit("not an recognized input format")
+        
+    if (isinstance(imagefile_2,str)):
+        im2, hdr2 = datafits(imagefile_2)
+    else:
+        hdr2=imagefile_2
+        
+    w1 = WCS(hdr1)
+    w2 = WCS(hdr2)
+    
+    n2x = hdr2['NAXIS1']
+    n2y = hdr2['NAXIS2']
+    k2s=sp.arange(0,n2x)
+    l2s=sp.arange(0,n2y)
+    kk2s, ll2s = sp.meshgrid(k2s, l2s)
+
+    if (fullWCS):
+        xxs2wcs, yys2wcs = w2.all_pix2world(kk2s, ll2s, 0)
+        kk1s, ll1s = w1.all_world2pix(xxs2wcs,yys2wcs,0,tolerance=1e-12)
+    else:
+        xxs2wcs, yys2wcs = w2.wcs_pix2world(kk2s, ll2s, 0)
+        kk1s, ll1s = w1.wcs_world2pix(xxs2wcs,yys2wcs,0)
+
+    resamp = map_coordinates(im1, [ll1s, kk1s])
+
+    if (fileout):
+        fits.writeto(fileout,resamp, hdr2, overwrite=True)
+
+    return resamp
+
+# --------------------
+#Function required in exec_polar_expansions
+# -------------------- 
+def cartesian2polar(outcoords, inputshape, origin, fieldscale=1.):
+    # Routine from original PolarMaps.py
+    """Coordinate transform for converting a polar array to Cartesian coordinates. 
+    inputshape is a tuple containing the shape of the polar array. origin is a
+    tuple containing the x and y indices of where the origin should be in the
+    output array."""
+
+    rindex, thetaindex = outcoords
+    x0, y0 = origin
+
+    theta = thetaindex * 2 * np.pi / (inputshape[0]-1)   # inputshape[0] = nbpixels+1
+    y = rindex*np.cos(theta)/fieldscale
+    x = rindex*np.sin(theta)/fieldscale
+    ix = -x + x0
+    iy = y +  y0
+    
+    return (iy,ix)
+
+# -----------------------------------------------------
 
 # =========================
 # 1. read RT parameter file
@@ -746,8 +879,15 @@ lines_params = params.readlines()     # reading parfile
 params.close()                 # closing parfile
 par = []                       # allocating a dictionary
 var = []                       # allocating a dictionary
-for line in lines_params:             # iterating over parfile
-    name, value, comment = line.split() # spliting name and value (first blank)
+for line in lines_params:      # iterating over parfile 
+    try:
+        line.split()[0][0]     # check if blank line (GWF)
+    except:
+        continue
+    if (line.split()[0][0]=='#'): # check if line starts with a # (comment)
+        continue
+    else:
+        name, value = line.split()[0:2]
     try:
         float(value)           # first trying with float
     except ValueError:         # if it is not float
@@ -759,13 +899,25 @@ for line in lines_params:             # iterating over parfile
     var.append(name)
 
 for i in range(len(par)):
-    exec(var[i]+"="+par[i])
+    #exec(var[i]+"="+par[i])
+    exec(var[i]+"="+str(par[i]))
+
+# save copy of params.dat
+os.system('cp params.dat params_last.dat')
 
 
 print('--------- RT parameters ----------')
 print('directory = ', dir)
 print('output number  = ', on)
 print('wavelength [mm] = ', wavelength)
+print('do we plot optical depth? : ', plot_tau)
+print('do we compute polarized intensity image? : ', polarized_scat)
+if polarized_scat == 'Yes':
+    z_expansion = 'G'
+    print('truncation_radius for dust pressure scale height [arcseconds] : ', truncation_radius)
+    if scat_mode != 5:
+        sys.exit("To get a polarized intensity image you need scat_mode = 5 in params.dat. Abort!")
+    print('mask_radius in polarized intensity image [arcseconds] : ', mask_radius)
 print('dust minimum size [m] = ', amin)
 print('dust maximum size [m] = ', amax)
 print('minus slope of dust size distribution = ', pindex)
@@ -781,7 +933,11 @@ print('beam position angle [deg] = ', bpaangle)
 print('star radius [Rsun] = ', rstar)
 print('star effective temperature [K] = ', teff)
 print('number of grid cells in colatitude for RADMC3D = ', ncol)
+if ncol%2 == 1:
+    sys.exit('the number of columns needs to be an even number, please try again!')
 print('type of vertical expansion done for dust mass volume density = ', z_expansion)
+if z_expansion == 'G':
+    print('Hd / Hgas = 1 if R < truncation_radius, R^-2 decrease beyond')
 if z_expansion == 'T':
     print('Hd / Hgas = sqrt(alpha/(alpha+St))')
 if z_expansion == 'T2':
@@ -789,15 +945,26 @@ if z_expansion == 'T2':
 if z_expansion == 'F':
     print('Hd / Hgas = 0.7 x ((St + 1/St)/1000)^0.2 (Fromang & Nelson 09)')
 print('do we recompute all dust densities? : ', recalc_density)
+print('do we include a bin with small dust tightly coupled to the gas? : ', bin_small_dust)
+print('what is the maximum altitude of the 3D grid in pressure scale heights? : ', zmax_over_H)
 print('do we recompute all dust opacities? : ', recalc_opac)
+print('do we plot dust opacities? : ', plot_opac)
 print('do we use pre-calculated opacities, which are located in opacity_dir directory? : ', precalc_opac)
 print('do we run RADMC3D calculation of temperature and ray tracing? : ', recalc_radmc)
 if recalc_radmc == 'Yes':
+    print('how many cores do we use for radmc calculation? : ', nbcores)
+    recalc_fluxmap = 'Yes'
+print('do we recompute fits file of raw flux map from image.out? This is useful if radmc has been run on a different platform: ', recalc_rawfits)
+if recalc_rawfits == 'Yes':
     recalc_fluxmap = 'Yes'
 print('do we recompute convolved flux map from the output of RADMC3D calculation? : ', recalc_fluxmap)
 print('do we compute 2D analytical solution to RT equation w/o scattering? : ', calc_abs_map)
+if calc_abs_map == 'Yes':
+    print('if so, do we assume the dust surface density equal to the gas surface density? : ', dustdens_eq_gasdens)
 print('do we take the gas (hydro) temperature for the dust temperature? : ', Tdust_eq_Tgas)
-print('do we also plot intensity map in polar coordinates? : ', polar_extra_map)
+print('do we add white noise to the raw flux maps? : ', add_noise)
+if add_noise == 'Yes':
+    print('if so, level of noise in Jy / beam', noise_dev_std)
 print('number of pixels in each direction for flux map computed by RADMC3D = ', nbpixels)
 print('scattering mode max for RADMC3D = ', scat_mode)
 nb_photons = int(nb_photons)
@@ -810,9 +977,12 @@ print('x- and y-max in final image [arcsec] = ', minmaxaxis)
 print('do we use second-order integration for ray tracing in RADMC3D? : ', secondorder)
 print('do we flip x-axis in disc plane? (mirror symmetry x -> -x in the simulation): ', xaxisflip)
 print('do we check beam shape by adding a source point at the origin?: ', check_beam)
+print('do we deproject the predicted image into polar coords?:', deproj_polar) # SP
+print('do we plot radial temperature profiles? : ', plot_temperature)
 
 # x-axis flip means that we apply a mirror-symetry x -> -x to the 2D simulation plane,
 # which in practice is done by adding 180 degrees to the disc's inclination wrt the line of sight
+inclination_input = inclination
 if xaxisflip == 'Yes':
     inclination = inclination + 180.0
 
@@ -822,7 +992,7 @@ if xaxisflip == 'Yes':
 bpaangle = -90.0-bpaangle
 
 # label for the name of the image file created by RADMC3D
-label = dir+'_o'+str(on)+'_p'+str(pindex)+'_r'+str(ratio)+'_amin'+str(amin)+'_amax'+str(amax)+'_nbin'+str(nbin)+'_scatmode'+str(scat_mode)+'_nphot'+str('{:.0e}'.format(nb_photons))+'_nphotscat'+str('{:.0e}'.format(nb_photons_scat))+'_ncol'+str(ncol)+'_zexp'+str(z_expansion)+'_xaxisflip'+str(xaxisflip)
+label = dir+'_o'+str(on)+'_p'+str(pindex)+'_r'+str(ratio)+'_a'+str(amin)+'_'+str(amax)+'_nb'+str(nbin)+'_mode'+str(scat_mode)+'_np'+str('{:.0e}'.format(nb_photons))+'_nc'+str(ncol)+'_z'+str(z_expansion)+'_xf'+str(xaxisflip)+'_Td'+str(Tdust_eq_Tgas)+'_bmaj'+str(bmaj)
 
 # set spherical grid, array allocation.
 # get the aspect ratio and flaring index used in the numerical simulation
@@ -895,8 +1065,13 @@ if (mem_array_gib/mem_gib > 0.5):
 # =========================
 # 2. compute dust surface density for each size bin
 # =========================
-if recalc_density == 'Yes':
-    print('--------- computing dust surface density ----------')
+print('--------- computing dust surface density ----------')
+
+# -------------------------
+# a) Case with no polarized scattering: we infer the dust's surface
+# density from the results of the gas+dust hydrodynamical simulation
+# -------------------------
+if (recalc_density == 'Yes' and polarized_scat == 'No'):
 
     # read information on the dust particles
     (rad, azi, vr, vt, Stokes, a) = np.loadtxt(dir+'/dustsystat'+str(on)+'.dat', unpack=True)
@@ -911,14 +1086,12 @@ if recalc_density == 'Yes':
         else:
             i = np.argmin(np.abs(gas.xm-r))
         if (i < 0 or i >= nrad):
-            print('pb with i = ', i, ' in recalc_density step: I must exit!')
-            exit()
+            sys.exit('pb with i = ', i, ' in recalc_density step: I must exit!')
         # azimuthal index of the cell where the particle is
         # (general expression since grid spacing in azimuth is always arithmetic)
         j = int((t-gas.zm.min())/(gas.zm.max()-gas.zm.min()) * nsec)
         if (j < 0 or j >= nsec):
-            print('pb with j = ', j, ' in recalc_density step: I must exit!')
-            exit()
+            sys.exit('pb with j = ', j, ' in recalc_density step: I must exit!')
         # particle size
         pcsize = a[m]   
         # find out which bin particle belongs to
@@ -958,12 +1131,68 @@ if recalc_density == 'Yes':
         # conversion in g/cm^2
         dustcube[ibin,:,:] *= (gas.cumass*1e3)/((gas.culength*1e2)**2.)  # dimensions: nbin, nrad, nsec
 
+    # Overwrite first bin (ibin = 0) to model extra bin with small dust tightly coupled to the gas
+    if bin_small_dust == 'Yes':
+        frac[0] *= 5e3
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("Bin with index 0 changed to include arbitrarilly small dust tightly coupled to the gas")
+        print("Mass fraction of bin 0 changed to: ",str(frac[0]))
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        imin = np.argmin(np.abs(gas.xmed-1.8))  # radial index corresponding to 0.45"
+        imax = np.argmin(np.abs(gas.xmed-2.8))  # radial index corresponding to 0.6"
+        dustcube[0,imin:imax,:] = gas.data[imin:imax,:] * ratio * frac[0] * (gas.cumass*1e3)/((gas.culength*1e2)**2.)  # dimensions: nbin, nrad, nsec
+        
+    print('Total dust mass [g] = ', np.sum(dustcube[:,:,:]*surface*(gas.culength*1e2)**2.))
+    print('Total dust mass [Mgas] = ', np.sum(dustcube[:,:,:]*surface*(gas.culength*1e2)**2.)/(Mgas*gas.cumass*1e3))
+    print('Total dust mass [Mstar] = ', np.sum(dustcube[:,:,:]*surface*(gas.culength*1e2)**2.)/(gas.cumass*1e3))
+    
+    # Total dust surface density
+    dust_surface_density = np.sum(dustcube,axis=0)
+    print('Maximum dust surface density [in g/cm^2] is ', dust_surface_density.max())
+
+# -------------------------
+# b) Case with polarized scattering: we say that the dust is perfectly
+# coupled to the gas
+# -------------------------
+if (recalc_density == 'Yes' and polarized_scat == 'Yes'):
+
+    # Mass of gas in units of the star's mass
+    Mgas = np.sum(gas.data*surface)
+    print 'Mgas / Mstar= '+str(Mgas)+' and Mgas [kg] = '+str(Mgas*gas.cumass) 
+
+    dustcube = dust.reshape(nbin, nsec, nrad)  
+    dustcube = np.swapaxes(dustcube,1,2)  # means nbin, nrad, nsec
+    frac = np.zeros(nbin)
+    buf = 0.0
+    
+    # compute dust surface density for each size bin
+    for ibin in range(nbin):
+        # fraction of dust mass in current size bin 'ibin', easy to check numerically that sum_frac = 1
+        frac[ibin] = (bins[ibin+1]**(4.0-pindex) - bins[ibin]**(4.0-pindex)) / (amax**(4.0-pindex) - amin**(4.0-pindex))
+        # total mass of dust particles in current size bin 'ibin'
+        M_i_dust = ratio * Mgas * frac[ibin]
+        buf += M_i_dust
+        print('Dust mass [in units of Mstar] in species ', ibin, ' = ', M_i_dust)
+        # dustcube, which contained N_i(r,phi), now contains sigma_i_dust (r,phi)
+        dustcube[ibin,:,:] = ratio * gas.data * frac[ibin]
+        # conversion in g/cm^2
+        dustcube[ibin,:,:] *= (gas.cumass*1e3)/((gas.culength*1e2)**2.)  # dimensions: nbin, nrad, nsec
+        # decrease dust surface density beyond truncation radius by R^-2
+        # NB: truncation_radius is in arcseconds
+        rcut_in_code_units  = truncation_radius*distance*au/gas.culength/1e2
+        rmask_in_code_units = mask_radius*distance*au/gas.culength/1e2
+        for i in range(nrad):
+            if (gas.xmed[i] > rcut_in_code_units):
+                dustcube[ibin,i,:] *= ( (gas.xmed[i]/rcut_in_code_units)**(-2.0) )
+            if (gas.xmed[i] < rmask_in_code_units):
+                dustcube[ibin,i,:] = 0.0 # *= ( (gas.xmed[i]/rmask_in_code_units)**(10.0) ) CUIDADIN!
+
     print('Total dust mass [g] = ', buf*gas.cumass*1e3)
     
     # Total dust surface density
     dust_surface_density = np.sum(dustcube,axis=0)
     print('Maximum dust surface density [in g/cm^2] is ', dust_surface_density.max())
-    
+
 
 # =========================
 # 3. Compute dust mass volume density for each size bin
@@ -982,21 +1211,45 @@ if recalc_density == 'Yes':
 
     # dust aspect ratio as function of ibin and r (or actually, R, cylindrical radius)
     hd = np.zeros((nbin,nrad))
+
     for ibin in range(nbin):
-        St = avgstokes[ibin]                                  # avg stokes number for that bin 
+        if polarized_scat == 'No':
+            St = avgstokes[ibin]                              # avg stokes number for that bin 
         hgas = aspectratio * (gas.xmed)**(flaringindex)       # gas aspect ratio (gas.xmed[i] = R in code units)
         # vertical extension depends on grain Stokes number
         # T = theoretical: hd/hgas = sqrt(alpha/(St+alpha))
         # T2 = theoretical: hd/hgas = sqrt(Dz/(St+Dz)) with Dz = 10xalpha here is the coefficient for
         # vertical diffusion at midplane, which can differ from alpha
         # F = extrapolation from the simulations by Fromang & Nelson 09
+        # G = Gaussian = same as gas (case of well-coupled dust for polarized intensity images)
         if z_expansion == 'F':
             hd[ibin,:] = 0.7 * hgas * ((St+1./St)/1000.)**(0.2)     
         if z_expansion == 'T':
             hd[ibin,:] = hgas * np.sqrt(alphaviscosity/(alphaviscosity+St))
         if z_expansion == 'T2':
             hd[ibin,:] = hgas * np.sqrt(10.0*alphaviscosity/(10.0*alphaviscosity+St))
-    
+        if z_expansion == 'G':
+            hd[ibin,:] = hgas
+            '''
+            # truncation_radius is in arcseconds
+            rcut_in_code_units  = truncation_radius*distance*au/gas.culength/1e2
+            for i in range(nrad):
+                if (gas.xmed[i] <= rcut_in_code_units):
+                    hd[ibin,i] = hgas[i]
+                else:
+                    hd[ibin,i] = hgas[i] * ( (gas.xmed[i]/rcut_in_code_units)**(-2.0) )
+            '''
+            '''
+            rmask_in_code_units = mask_radius*distance*au/gas.culength/1e2
+            for i in range(nrad):
+                if (gas.xmed[i] < rmask_in_code_units):
+                    hd[ibin,i] = hgas[i] * ( (gas.xmed[i]/rmask_in_code_units)**(2.0) )
+                if (gas.xmed[i] > rcut_in_code_units):
+                    hd[ibin,i] = hgas[i] * ( (gas.xmed[i]/rcut_in_code_units)**(-2.0) )
+                if ( (gas.xmed[i] >= rmask_in_code_units) and (gas.xmed[i] <= rcut_in_code_units) ):
+                    hd[ibin,i] = hgas[i]
+            '''
+                                
     # dust aspect ratio as function of ibin, r and phi (2D array for each size bin)
     hd2D = np.zeros((nbin,nrad,nsec))
     for th in range(nsec):
@@ -1052,6 +1305,8 @@ if recalc_density == 'Yes':
     # free RAM memory
     del rhodustcube, dustcube, dust, hd2D, r2D
 
+    # Write 3D spherical grid for RT computational calculation
+    write_AMRgrid(gas, Plot=False)
 else:
     print('--------- I did not compute dust densities (recalc_density = No in params.dat file) ----------')
 
@@ -1061,114 +1316,159 @@ else:
 # =========================
 if recalc_opac == 'Yes':
     print('--------- computing dust opacities ----------')
-    ldustopac = []
-    graindens = 2.0 # g / cc
-    if species == 'mix_2species_porous':
+
+    # Calculation of opacities uses the python scripts makedustopac.py and bhmie.py
+    # which were written by C. Dullemond, based on the original code by B. Draine.
+    
+    logawidth = 0.05          # Smear out the grain size by 5% in both directions
+    na        = 20            # Use 10 grain size samples per bin size
+    chop      = 5.            # Remove forward scattering within an angle of 5 degrees
+    extrapol  = True          # Extrapolate optical constants beyond its wavelength grid, if necessary
+    verbose   = False         # If True, then write out status information
+    ntheta    = 999           # Number of scattering angle sampling points
+    optconstfile = os.path.expanduser(opacity_dir)+'/'+species+'.lnk'    # link to optical constants file
+
+    # The material density in gram / cm^3
+    graindens = 2.0 # default density in g / cc
+    if (species == 'mix_2species_porous' or species == 'mix_2species_porous_ice' or species == 'mix_2species_porous_ice70'):
         graindens = 0.1 # g / cc
     if species == 'mix_2species':
         graindens = 1.7 # g / cc
+    if species == 'mix_2species_60silicates_40carbons':
+        graindens = 2.7 # g / cc
+    
+    # Set up a wavelength grid (in cm) upon which we want to compute the opacities
+    # 1 micron -> 1 cm
+    lamcm     = 10.0**np.linspace(0,4,200)*1e-4   
+
+    # Set up an angular grid for which we want to compute the scattering matrix Z
+    theta     = np.linspace(0.,180.,ntheta)
+
     for ibin in range(int(nbin)):
-        print(ibin)
-        # function make_dustkappa is defined in the top of the program
-        make_dustkappa(species=species, abin=ibin, nbins=nbin, alpha=float(pindex),graindens=graindens,
-                       amin=bins[ibin]*1.e6, amax=bins[ibin+1]*1.e6)
-        ldustopac.append(species+str(ibin))
-    print(ldustopac)
-    write_dustopac(species=ldustopac)
-    plot_opacities(species=species,amin=amin,amax=amax,nbin=nbin)
+        # median grain size in cm in current bin size:
+        agraincm   = 10.0**(0.5*(np.log10(1e2*bins[ibin]) + np.log10(1e2*bins[ibin+1])))
+        print('====================')
+        print('bin ', ibin+1,'/',nbin)
+        print('grain size [cm]: ', agraincm, ' with grain density [g/cc] = ', graindens)
+        print('====================')
+        pathout    = species+str(ibin)
+        opac       = compute_opac_mie(optconstfile,graindens,agraincm,lamcm,theta=theta,
+                                      extrapolate=extrapol,logawidth=logawidth,na=na,
+                                      chopforward=chop,verbose=verbose)
+        if (scat_mode >= 3):
+            print("Writing dust opacities in dustkapscatmat* files")
+            write_radmc3d_scatmat_file(opac,pathout)
+        else:
+            print("Writing dust opacities in dustkappa* files")
+            write_radmc3d_kappa_file(opac,pathout)
 else:
-    print('------- taking dustkappa* opacity files in current directory (recalc_opac = No in params.dat file) ------ ')
+    print('------- taking dustkap* opacity files in current directory (recalc_opac = No in params.dat file) ------ ')
+
+# Write dustopac.inp file even if we don't (re)calculate dust opacities
+write_dustopac(species,nbin)
+if plot_opac == 'Yes':
+    print('--------- plotting dust opacities ----------')
+    plot_opacities(species=species,amin=amin,amax=amax,nbin=nbin,lbda1=wavelength*1e3)
+
+# write radmc3d script in case radmc3d mctherm / ray_tracing are run on a different platform
+write_radmc3d_script()
 
 
 # =========================
 # 5. Call to RADMC3D thermal solution and ray tracing 
 # =========================
-if recalc_radmc == 'Yes':
+if (recalc_radmc == 'Yes' or recalc_rawfits == 'Yes'):
     # Write other parameter files required by RADMC3D
     print('--------- printing auxiliary files ----------')
 
-    # Write 3D spherical grid for RT computational calculation
-    write_AMRgrid(gas, Plot=False)
-
     # need to check why we need to output wavelength...
-    write_wavelength()
-    write_stars(Rstar = rstar, Tstar = teff)
+    if recalc_rawfits == 'No':
+        write_wavelength()
+        write_stars(Rstar = rstar, Tstar = teff)
 
     # rto_style = 3 means that RADMC3D will write binary output files
-    # setthreads corresponds to the number of threads / cpus over which radmc3d runs
-    write_radmc3dinp(nphot_scat=nb_photons_scat, nphot=nb_photons, rto_style=3, 
-                     modified_random_walk=1, scattering_mode_max=scat_mode, setthreads=4)
+    # setthreads corresponds to the number of threads (cores) over which radmc3d runs
+    if recalc_rawfits == 'No':
+        write_radmc3dinp(nphot_scat=nb_photons_scat, nphot=nb_photons, rto_style=3, 
+                         modified_random_walk=1, scattering_mode_max=scat_mode, setthreads=nbcores)
     
     # Add 90 degrees to position angle so that RADMC3D's definition of
     # position angle be consistent with observed position
     # angle, which is what we enter in the params.dat file
-    M = RTmodel(distance=distance, Lambda=wavelength*1e3, Loadlambda=0, label=label,
+    M = RTmodel(distance=distance, Lambda=wavelength*1e3, label=label,
                 npix=nbpixels, phi=phiangle, incl=inclination, posang=posangle+90.0) 
 
     # Get dust temperature
-    print('--------- executing Monte-Carlo thermal calculation with RADMC3D ----------')
-    run_mctherm()
+    if recalc_rawfits == 'No':
+        print('--------- executing Monte-Carlo thermal calculation with RADMC3D ----------')
+        run_mctherm()
     
     # Run ray tracing
-    print('--------- executing ray tracing with RADMC3D ----------')
-    run_raytracing(M)
+    if recalc_rawfits == 'No':
+        print('--------- executing ray tracing with RADMC3D ----------')    
+        run_raytracing(M)
 
     print('--------- exporting results in fits format ----------')
-    # Put Plot=True to display image of the raw intensity
-    outfile = exportfits(M, Plot=False)
+    outfile = exportfits(M)
 
-    # Plot midplane and surface temperature profiles
-    Temp = np.fromfile('dust_temperature.bdat', dtype='float64')
-    Temp = Temp[4:]
-    Temp = Temp.reshape(nbin,nsec,ncol,nrad)
-    # Keep temperature of the largest dust species
-    Temp = Temp[-1,:,:,:]
-    # Temperature in the midplane (ncol/2 given that the grid extends on both sides about the midplane)
-    # not really in the midplane because theta=pi/2 is an edge colatitude...
-    Tm = Temp[:,ncol//2,:]
-    # Temperature at one surface
-    Ts = Temp[:,0,:]
-    # Azimuthally-averaged radial profiles
-    axiTm = np.sum(Tm,axis=0)/nsec
-    axiTs = np.sum(Ts,axis=0)/nsec
-    fig = plt.figure(figsize=(4.,3.))
-    ax = fig.gca()
-    S = gas.xmed*gas.culength/1.5e11  # radius in a.u.
-    # gas temperature in hydro simulation in Kelvin (assuming T in R^-1/2, no matter
-    # the value of the gas flaring index in the simulation)
-    Tm_model = aspectratio*aspectratio*gas.cutemp*gas.xmed**(-1.0+2.0*flaringindex)
-    ax.plot(S, axiTm, 'bo', markersize=1., label='midplane');
-    ax.plot(S, Tm_model, 'b--', markersize=1., label='midplane hydro');
-    ax.plot(S, axiTs, 'rs', markersize=1., label='surface')
-    ax.set_xlabel(r'$R ({\rm au})$', fontsize=12)
-    ax.set_ylabel(r'$T ({\rm K})$', fontsize=12)
-    ax.set_xlim(20.0, 100.0) # cuidadin!
-    #ax.set_xlim(S.min(), S.max())
-    ax.set_ylim(10.0, 150.0)  # cuidadin!
-    #ax.set_ylim(Tm.min(), Ts.max())
-    ax.tick_params(axis='both', direction='in', top='on', right='on')
-    ax.tick_params(axis='both', which='minor', top='on', right='on', direction='in')
-    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    ax.legend(frameon=False)
-    fig.add_subplot(ax)
-    filenameT = 'T_R_'+label+'.pdf'
-    fig.savefig(filenameT, dpi=180, bbox_inches='tight')
-    fig.clf()
-    # Save radial profiles in an ascii file
-    filenameT2 = 'T_R_'+label+'.dat'
-    TEMPOUT=open(filenameT2,'w')
-    TEMPOUT.write('# radius [au] \t T_midplane_radmc3d \t T_surface_radmc3d \t T_midplane_hydro\n')
-    for i in range(nrad):
-        TEMPOUT.write('%f \t %f \t %f \t %f\n' %(S[i],axiTm[i],axiTs[i],Tm_model[i]))
-    TEMPOUT.close()
-     # free RAM memory
-    del Temp
+    if plot_temperature == 'Yes':
+        # Plot midplane and surface temperature profiles
+        Temp = np.fromfile('dust_temperature.bdat', dtype='float64')
+        Temp = Temp[4:]
+        Temp = Temp.reshape(nbin,nsec,ncol,nrad)
+        # Keep temperature of the largest dust species
+        Temp = Temp[-1,:,:,:]
+        # Temperature in the midplane (ncol/2 given that the grid extends on both sides about the midplane)
+        # not really in the midplane because theta=pi/2 is an edge colatitude...
+        Tm = Temp[:,ncol//2,:]
+        # Temperature at one surface
+        Ts = Temp[:,0,:]
+        # Azimuthally-averaged radial profiles
+        axiTm = np.sum(Tm,axis=0)/nsec
+        axiTs = np.sum(Ts,axis=0)/nsec
+        fig = plt.figure(figsize=(4.,3.))
+        ax = fig.gca()
+        S = gas.xmed*gas.culength/1.5e11  # radius in a.u.
+        # gas temperature in hydro simulation in Kelvin (assuming T in R^-1/2, no matter
+        # the value of the gas flaring index in the simulation)
+        Tm_model = aspectratio*aspectratio*gas.cutemp*gas.xmed**(-1.0+2.0*flaringindex)
+        ax.plot(S, axiTm, 'bo', markersize=1., label='midplane')
+        ax.plot(S, Tm_model, 'b--', markersize=1., label='midplane hydro')
+        ax.plot(S, axiTs, 'rs', markersize=1., label='surface')
+        ax.set_xlabel(r'$R ({\rm au})$', fontsize=12)
+        ax.set_ylabel(r'$T ({\rm K})$', fontsize=12)
+        ax.set_xlim(20.0, 100.0) # cuidadin!
+        #ax.set_xlim(S.min(), S.max())
+        ax.set_ylim(10.0, 150.0)  # cuidadin!
+        #ax.set_ylim(Tm.min(), Ts.max())
+        ax.tick_params(axis='both', direction='in', top='on', right='on')
+        ax.tick_params(axis='both', which='minor', top='on', right='on', direction='in')
+        ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+        ax.legend(frameon=False)
+        fig.add_subplot(ax)
+        filenameT = 'T_R_'+label+'.pdf'
+        fig.savefig(filenameT, dpi=180, bbox_inches='tight')
+        fig.clf()
+        # Save radial profiles in an ascii file
+        filenameT2 = 'T_R_'+label+'.dat'
+        TEMPOUT=open(filenameT2,'w')
+        TEMPOUT.write('# radius [au] \t T_midplane_radmc3d \t T_surface_radmc3d \t T_midplane_hydro\n')
+        for i in range(nrad):
+            TEMPOUT.write('%f \t %f \t %f \t %f\n' %(S[i],axiTm[i],axiTs[i],Tm_model[i]))
+        TEMPOUT.close()
+            # free RAM memory
+        del Temp
 else:
     print('------- I did not run RADMC3D, using existing .fits file for convolution ')
     print('------- (recalc_radmc = No in params.dat file) and final image ------ ')
-    outfile = 'image_'+str(label)+'_lbda'+str(wavelength)+'_i'+str(inclination)+'_phi'+str(phiangle)+'_PA'+str(posangle)+'.fits'
+    outfile = 'image_'+str(label)+'_lbda'+str(wavelength)+'_i'+str(inclination)+'_phi'+str(phiangle)+'_PA'+str(posangle)
     if secondorder == 'Yes':
-        outfile = 'image_'+str(label)+'_lbda'+str(wavelength)+'_i'+str(inclination)+'_phi'+str(phiangle)+'_PA'+str(posangle)+'_secondorder.fits'
+        outfile = outfile+'_so'
+    if dustdens_eq_gasdens == 'Yes':
+        outfile = outfile+'_ddeqgd'
+    if bin_small_dust == 'Yes':
+        outfile = outfile+'_bin0'
+    outfile = outfile+'.fits'
 
 
 # =========================
@@ -1178,20 +1478,63 @@ if recalc_fluxmap == 'Yes':
     print('--------- Convolving and writing final image ----------')
 
     f = fits.open('./'+outfile)
-    raw_intensity = f[0].data
-    if recalc_radmc == 'No':
-        print("Total flux [Jy] = "+str(np.sum(raw_intensity)))   # sum over pixels
     hdr = f[0].header
-    nx = hdr['NAXIS1']
-    ny = hdr['NAXIS2']
     # pixel size converted from degrees to arcseconds
     cdelt = np.abs(hdr['CDELT1']*3600.)
 
-    # check beam is correctly handled by inserting a source point at the
-    # origin of the raw intensity image
-    if check_beam == 'Yes':
-        raw_intensity[nx//2-1,ny//2-1] = 100.0*raw_intensity.max()
+    # a) case with no polarized scattering: fits file directly contains raw intensity field
+    if polarized_scat == 'No':
+        nx = hdr['NAXIS1']
+        ny = hdr['NAXIS2']
+        raw_intensity = f[0].data
+        if (recalc_radmc == 'No' and plot_tau == 'No'):
+            print("Total flux [Jy] = "+str(np.sum(raw_intensity)))   # sum over pixels
+        # check beam is correctly handled by inserting a source point at the
+        # origin of the raw intensity image
+        if check_beam == 'Yes':
+            raw_intensity[nx//2-1,ny//2-1] = 100.0*raw_intensity.max()
+        # Add white (Gaussian) noise to raw flux image to simulate effects of 'thermal' noise
+        if (add_noise == 'Yes' and plot_tau == 'No'):
+            # beam area in pixel^2
+            beam =  (np.pi/(4.*np.log(2.)))*bmaj*bmin/(cdelt**2.)
+            # noise standard deviation in Jy per pixel (I've checked the expression below works well)
+            noise_dev_std_Jy_per_pixel = noise_dev_std / np.sqrt(0.5*beam)  # 1D
+            # noise array
+            noise_array = np.random.normal(0.0,noise_dev_std_Jy_per_pixel,size=nbpixels*nbpixels)
+            noise_array = noise_array.reshape(nbpixels,nbpixels)
+            raw_intensity += noise_array
 
+    # b) case with polarized scattering: fits file contains raw Stokes vectors
+    if polarized_scat == 'Yes':
+        cube = f[0].data        
+        Q = cube[1,:,:]
+        U = cube[2,:,:]
+        #I = cube[0,:,:]
+        #P = cube[4,:,:]
+        (nx, ny) = Q.shape
+        # define theta angle for calculation of Q_phi below (Avenhaus+ 14)
+        x = np.arange(1,nx+1)
+        y = np.arange(1,ny+1)
+        XXs,YYs = np.meshgrid(x,y)
+        X0 = nx/2-1
+        Y0 = ny/2-1
+        rrs = np.sqrt((XXs-X0)**2+(YYs-Y0)**2)
+        theta = np.arctan2(-(XXs-X0),(YYs-Y0)) # notice atan(x/y)
+        if add_noise == 'Yes':
+            # add noise to Q and U Stokes arrays
+            # noise array
+            noise_array_Q = np.random.normal(0.0,0.004*Q.max(),size=nbpixels*nbpixels)
+            noise_array_Q = noise_array_Q.reshape(nbpixels,nbpixels)
+            Q += noise_array_Q
+            noise_array_U = np.random.normal(0.0,0.004*U.max(),size=nbpixels*nbpixels)
+            noise_array_U = noise_array_U.reshape(nbpixels,nbpixels)
+            U += noise_array_U 
+        # add mask in polarized intensity Qphi image if mask_radius != 0
+        if mask_radius != 0.0:
+            pillbox = np.ones((nx,ny))
+            imaskrad = mask_radius/cdelt  # since cdelt is pixel size in arcseconds
+            pillbox[np.where(rrs<imaskrad)] = 0.
+    
     # ------------
     # smooth image
     # ------------
@@ -1201,29 +1544,173 @@ if recalc_fluxmap == 'Yes':
     stdev_x = (bmaj/(2.*np.sqrt(2.*np.log(2.)))) / cdelt
     stdev_y = (bmin/(2.*np.sqrt(2.*np.log(2.)))) / cdelt
 
-    # Call to Gauss_filter function
-    smooth = Gauss_filter(raw_intensity, stdev_x, stdev_y, bpaangle, Plot=False)
+    # a) case with no polarized scattering
+    if (polarized_scat == 'No' and plot_tau == 'No'):
+        # Call to Gauss_filter function
+        smooth = Gauss_filter(raw_intensity, stdev_x, stdev_y, bpaangle, Plot=False)
+        # convert image from Jy/pixel to mJy/beam or microJy/beam
+        # could be refined...
+        convolved_intensity = smooth * 1e3 * beam   # mJy/beam
+        strflux = 'mJy/beam'
+        if convolved_intensity.max() < 1.0:
+            convolved_intensity = smooth * 1e6 * beam   # microJy/beam
+            strflux = '$\mu$Jy/beam'
+    if plot_tau == 'Yes':
+        convolved_intensity = raw_intensity
+        strflux = '$\tau'
 
-    # convert image in mJy/beam or in microJy/beam
-    # could be refined...
-    convolved_intensity = smooth * 1e3 * beam   # mJy/beam
-    strflux = 'mJy/beam'
-    if convolved_intensity.max() < 1.0:
-        convolved_intensity = smooth * 1e6 * beam   # microJy/beam
-        strflux = '$\mu$Jy/beam'
+    # b) case with polarized scattering
+    if polarized_scat == 'Yes':       
+        Q_smooth = Gauss_filter(Q,stdev_x,stdev_y,bpaangle,Plot=False)
+        U_smooth = Gauss_filter(U,stdev_x,stdev_y,bpaangle,Plot=False)
+        if mask_radius != 0.0:
+            pillbox_smooth = Gauss_filter(pillbox, stdev_x, stdev_y, bpaangle, Plot=False)
+            Q_smooth *= pillbox_smooth
+            U_smooth *= pillbox_smooth
+        Q_phi = Q_smooth * np.cos(2*theta) + U_smooth * np.sin(2*theta)
+        convolved_intensity = Q_phi
+        strflux = 'arb. units'
 
+    # -------------------------------------
+    # SP: save convolved flux map solution to fits 
+    # -------------------------------------
+    hdu = fits.PrimaryHDU()
+    hdu.header['BITPIX'] = -32    
+    hdu.header['NAXIS'] = 4  # 2
+    hdu.header['NAXIS1'] = nbpixels
+    hdu.header['NAXIS2'] = nbpixels
+    hdu.header['NAXIS3'] = 1
+    hdu.header['NAXIS4'] = 1
+    hdu.header['EPOCH']  = 2000.0
+    hdu.header['EQUINOX'] = 2000.0
+    hdu.header['LONPOLE'] = 180.0
+    hdu.header['CTYPE1'] = 'RA---SIN'
+    hdu.header['CTYPE2'] = 'DEC--SIN'
+    hdu.header['CTYPE3'] = 'FREQ'
+    hdu.header['CTYPE4'] = 'STOKES'
+    hdu.header['CRVAL1'] = 8.261472379700E+01 # float(0.0)
+    hdu.header['CRVAL2'] = 2.533239051468E+01 # float(0.0)
+    hdu.header['CRVAL3'] = 33.0E+09
+    hdu.header['CRVAL4'] = 1.0E+00
+    hdu.header['CDELT1'] = hdr['CDELT1']
+    hdu.header['CDELT2'] = hdr['CDELT2']
+    hdu.header['CDELT3'] = 8.05E+09
+    hdu.header['CDELT4'] = 1.0E+00
+    hdu.header['CUNIT1'] = 'deg     '
+    hdu.header['CUNIT2'] = 'deg     '
+    hdu.header['CUNIT3'] = 'Hz     '
+    hdu.header['CUNIT4'] = ' '
+    hdu.header['CRPIX1'] = float((nbpixels+1.)/2.)
+    hdu.header['CRPIX2'] = float((nbpixels+1.)/2.)
+    if strflux == 'mJy/beam':
+        hdu.header['BUNIT'] = 'milliJY/BEAM'
+    if strflux == '$\mu$Jy/beam':
+        hdu.header['BUNIT'] = 'microJY/BEAM'
+    if strflux == '':
+        hdu.header['BUNIT'] = ''
+    hdu.header['BTYPE'] = 'FLUX DENSITY'
+    hdu.header['BSCALE'] = 1
+    hdu.header['BZERO'] = 0
+    del hdu.header['EXTEND']
+    # keep track of all parameters in params.dat file
+    #for i in range(len(lines_params)):
+    #    hdu.header[var[i]] = par[i]
+    hdu.data = convolved_intensity
+    inbasename = os.path.basename('./'+outfile)
+    if add_noise == 'Yes':
+        jybeamfileout=re.sub('.fits', '_wn_JyBeam.fits', inbasename)
+    else:
+        jybeamfileout=re.sub('.fits', '_JyBeam.fits', inbasename)
+    if polarized_scat == 'Yes':
+        jybeamfileout = 'Qphi.fits'
+    hdu.writeto(jybeamfileout, overwrite=True)
+
+    # ----------------------------
+    # if polarised imaging, first de-project Qphi image to multiply by R^2
+    # then re-project back
+    # ----------------------------
+    if polarized_scat == 'Yes':
+        hdu0 = fits.open(jybeamfileout)
+        hdr0 = hdu0[0].header
+        nx = int(hdr0['NAXIS1'])
+        ny = nx
+        if ( (nx % 2) == 0):
+            nx = nx+1
+            ny = ny+1
+        hdr1 = deepcopy(hdr0)    
+        hdr1['NAXIS1']=nx
+        hdr1['NAXIS2']=ny
+        hdr1['CRPIX1']=(nx+1)/2
+        hdr1['CRPIX2']=(ny+1)/2
+        
+        # slightly modify original image such that centre is at middle of image -> odd number of cells
+        image_centered = gridding(jybeamfileout,hdr1,fullWCS=False)
+        fileout_centered = re.sub('.fits', 'centered.fits', jybeamfileout)
+        fits.writeto(fileout_centered, image_centered, hdr1, overwrite=True)
+        
+        # rotate original, centred image by position angle (posangle)
+        image_rotated = ndimage.rotate(image_centered, posangle, reshape=False)
+        fileout_rotated = re.sub('.fits', 'rotated.fits', jybeamfileout)
+        fits.writeto(fileout_rotated, image_rotated, hdr1, overwrite=True)
+        hdr2 = deepcopy(hdr1)
+        cosi = np.cos(inclination_input*np.pi/180.)
+        hdr2['CDELT1']=hdr2['CDELT1']*cosi
+
+        # Then deproject with inclination via gridding interpolation function and hdr2
+        image_stretched = gridding(fileout_rotated,hdr2)
+
+         # rescale stretched image by r^2
+        nx = hdr2['NAXIS1']
+        ny = hdr2['NAXIS2']
+        cdelt = abs(hdr2['CDELT1']*3600)  # in arcseconds
+        (x0,y0) = (nx/2, ny/2)
+        mymax = 0.0
+        for j in xrange(nx):
+            for k in xrange(ny):
+                dx = (j-x0)*cdelt
+                dy = (k-y0)*cdelt
+                rad = np.sqrt(dx*dx + dy*dy)
+                image_stretched[j,k] *= (rad*rad)
+                if (rad <= truncation_radius and image_stretched[j,k] > mymax):
+                    mymax = image_stretched[j,k]
+                #else:
+                #    image_stretched[j,k] = 0.0
+                    
+                    
+        # Normalize PI intensity
+        image_stretched /= mymax
+        fileout_stretched = re.sub('.fits', 'stretched.fits', jybeamfileout)
+        fits.writeto(fileout_stretched, image_stretched, hdr2, overwrite=True)
+
+        # Then deproject via gridding interpolatin function and hdr1
+        image_destretched = gridding(fileout_stretched,hdr1)
+
+        # and finally de-rotate by -position angle
+        final_image = ndimage.rotate(image_destretched, -posangle, reshape=False)
+
+        # save final fits
+        inbasename = os.path.basename('./'+outfile)
+        if add_noise == 'Yes':
+            jybeamfileout=re.sub('.fits', '_wn_JyBeam.fits', inbasename)
+        else:
+            jybeamfileout=re.sub('.fits', '_JyBeam.fits', inbasename)
+        fits.writeto(jybeamfileout,final_image,hdr1,clobber=True)
+        convolved_intensity = final_image
+        #os.system('rm -f Qphi*.fits')
+
+    
     # --------------------
     # plotting image panel
     # --------------------
-    matplotlib.rcParams.update({'font.size': 16})
+    matplotlib.rcParams.update({'font.size': 20})
     matplotlib.rc('font', family='Arial') 
     fontcolor='white'
 
-    inbasename = os.path.basename('./'+outfile)
     # name of pdf file for final image
-    fileout = re.sub('.fits', '.pdf', inbasename)
+    fileout = re.sub('.fits', '.pdf', jybeamfileout)
     fig = plt.figure(figsize=(8.,8.))
     ax = plt.gca()
+    plt.subplots_adjust(left=0.15, right=0.94, top=0.95, bottom=0.09)
 
     # Set x-axis orientation, x- and y-ranges
     # Convention is that RA offset increases leftwards (ie,
@@ -1250,30 +1737,38 @@ if recalc_fluxmap == 'Yes':
     dmin = -da
     dmax = da
 
+    # x- and y-ticks and labels
     ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
-    ax.set_xlabel(r'$\Delta \alpha $ / arcsec')
-    ax.set_ylabel(r'$\Delta \delta $ / arcsec ')
+    ax.set_yticks(ax.get_xticks())    # set same ticks in x and y in cartesian 
+    ax.set_xlabel('RA offset [arcsec]')
+    ax.set_ylabel('Dec offset [arcsec]')
 
     # imshow does a bilinear interpolation. You can switch it off by putting
     # interpolation='none'
     min = convolved_intensity.min()
     max = convolved_intensity.max()
+    if polarized_scat == 'Yes':
+        min = 0.0
+        max = 1.0  # cuidadin 1.0
     CM = ax.imshow(convolved_intensity, origin='lower', cmap='nipy_spectral', interpolation='bilinear', extent=[a0,a1,d0,d1], vmin=min, vmax=max)
 
     # Add wavelength in top-left corner
-    strlambda = '$\lambda$ = '+str(wavelength)+' mm'
-    ax.text(xlambda,dmax-0.166*da,strlambda, fontsize=18, color = 'white')
+    strlambda = str(wavelength)+' mm (model)'
+    if wavelength < 0.01:
+        strlambda = str(wavelength*1e3)+'$\mu$m (model)'
+    ax.text(xlambda,dmax-0.166*da,strlambda, fontsize=20, color = 'white',weight='bold')
 
     # Add + sign at the origin
-    ax.plot(0.0,0,0,'+',color='white')
+    ax.plot(0.0,0.0,'+',color='white',markersize=10)
 
     # plot beam
-    from matplotlib.patches import Ellipse
-    e = Ellipse(xy=[xlambda,dmin+0.166*da], width=bmin, height=bmaj, angle=bpaangle+90.0)
-    e.set_clip_box(ax.bbox)
-    e.set_facecolor('white')
-    e.set_alpha(0.8)
-    ax.add_artist(e)
+    if plot_tau == 'No':
+        from matplotlib.patches import Ellipse
+        e = Ellipse(xy=[xlambda,dmin+0.166*da], width=bmin, height=bmaj, angle=bpaangle+90.0)
+        e.set_clip_box(ax.bbox)
+        e.set_facecolor('white')
+        e.set_alpha(0.8)
+        ax.add_artist(e)
 
     # plot color-bar
     from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -1283,70 +1778,90 @@ if recalc_fluxmap == 'Yes':
     cax.xaxis.set_ticks_position('top')
     cb =  plt.colorbar(CM, cax=cax, orientation='horizontal')
     cax.xaxis.tick_top()
-    cax.xaxis.set_tick_params(labelsize=15, direction='out')
-    cax.yaxis.set_tick_params(labelsize=15, direction='out')
-    cax.text(.990, 0.30, strflux, fontsize=15, horizontalalignment='right', color='white')
+    cax.xaxis.set_tick_params(labelsize=20, direction='out')
+    cax.yaxis.set_tick_params(labelsize=20, direction='out')
+    cax.text(.990, 0.22, strflux, fontsize=20, horizontalalignment='right', color='white', weight='bold')
 
     plt.savefig('./'+fileout, bbox_inches='tight', dpi=160)
     plt.clf()
 
-    # --------------------
-    # plotting image in polar coordinates
-    # --------------------
-    if polar_extra_map == 'Yes':
-        print('projecting convolved intensity map onto polar plane...')
-        Inu_polar3 = np.zeros(nbpixels*nbpixels)
-        Inu_polar3 = Inu_polar3.reshape(nbpixels,nbpixels)
-        # x-grid contains right ascension offset
-        xgrid = a0 + (a1-a0)*np.arange(nbpixels)/(nbpixels-1)
-        xgrid = -xgrid
-        # x-grid contains declination offset
-        ygrid = d0 + (d1-d0)*np.arange(nbpixels)/(nbpixels-1)
-        # rc-grid is radius in the polar map
-        rmin = 0.0    # specify other value in you want to do a radial zoom
-        rmax = np.minimum(minmaxaxis,abs(a0))
-        rc   = rmin + (rmax-rmin)* np.arange(nbpixels)/(nbpixels-1)
-        # phic-grid is position angle in the polar map
-        phic = 2.0*np.pi * np.arange(nbpixels)/nbpixels
-        for i in range(nbpixels):
-            for j in range(nbpixels):
-                # remove 3pi/2 to phic to comply with definition of position angle east of north
-                xc = rc[i]*np.cos(phic[j]-1.5*np.pi)    
-                yc = rc[i]*np.sin(phic[j]-1.5*np.pi)
-                ir = int((xc-xgrid.min())/(xgrid.max()-xgrid.min()) * (nbpixels-1.0))
-                jr = int((yc-ygrid.min())/(ygrid.max()-ygrid.min()) * (nbpixels-1.0))
-                if ( (ir < nbpixels-1) and (jr < nbpixels-1) ):
-                    Inu_polar3[j,i] = convolved_intensity[jr,ir] * (xgrid[ir+1]-xc) * (ygrid[jr+1]-yc) \
-                        + convolved_intensity[jr+1,ir]   * (xgrid[ir+1]-xc) * (yc-ygrid[jr]) \
-                        + convolved_intensity[jr,ir+1]   * (xc-xgrid[ir]) * (ygrid[jr+1]-yc) \
-                        + convolved_intensity[jr+1,ir+1] * (xc-xgrid[ir]) * (yc-ygrid[jr])
-                    Inu_polar3[j,i] /= ((xgrid[ir+1]-xgrid[ir]) * (ygrid[jr+1]-ygrid[jr]))
-                else:
-                    Inu_polar3[j,i] = 0.0
+    # =====================
+    # Compute deprojection and polar expansion (SP)
+    # =====================
+    if deproj_polar == 'Yes':
+        currentdir = os.getcwd()
+        alpha_min = 0.;          # deg, PA of offset from the star
+        Delta_min = 0.;          # arcsec, amplitude of offset from the star
+        RA = 0.0  # if input image is a prediction, star should be at the center
+        DEC = 0.0 # note that this deprojection routine works in WCS coordinates
+        cosi = np.cos(inclination_input*np.pi/180.)
 
-        # name of pdf file for final image
-        fileout = re.sub('.fits', 'polar.pdf', inbasename)
+        print('deprojection around PA [deg] = ',posangle)
+        print('and inclination [deg] = ',inclination_input)
+        
+        # makes a new directory "deproj_polar_dir" and calculates a number
+        # of products: copy of the input image [_fullim], centered at
+        # (RA,DEC) [_centered], deprojection by cos(i) [_stretched], polar
+        # image [_polar], etc. Also, a _radial_profile which is the
+        # average radial intensity.
+        exec_polar_expansions(jybeamfileout,'deproj_polar_dir',posangle,cosi,RA=RA,DEC=DEC,
+                              alpha_min=alpha_min, Delta_min=Delta_min,
+                              XCheckInv=False,DoRadialProfile=False,
+                              DoAzimuthalProfile=False,PlotRadialProfile=False,
+                              a_min=0.02,a_max=1.0,zoomfactor=1.)
+        
+        # Save polar fits in current directory
+        fileout = re.sub('.pdf', '_polar.fits', fileout)
+        command = 'cp deproj_polar_dir/'+fileout+' .'
+        os.system(command)
+
+        filein = re.sub('.pdf', '_polar.fits', fileout)
+        # Read fits file with deprojected field in polar coordinates
+        f = fits.open(filein)
+        convolved_intensity = f[0].data    # uJy/beam
+
+        # azimuthal shift such that PA=0 corresponds to y-axis pointing upwards, and
+        # increases counter-clockwise from that axis
+        if xaxisflip == 'Yes':
+            jshift = int(nbpixels/4)
+        else:
+            jshift = int(nbpixels/4)
+        convolved_intensity = np.roll(convolved_intensity, shift=-jshift, axis=1)
+        
+        # -------------------------------
+        # plot image in polar coordinates
+        # -------------------------------
+        fileout = re.sub('.fits', '.pdf', filein)
         fig = plt.figure(figsize=(8.,8.))
         ax = plt.gca()
+        plt.subplots_adjust(left=0.12, right=0.96, top=0.95, bottom=0.09)
 
-        # Labels and ticks
+        # Set x- and y-ranges
+        ax.set_xlim(-180,180)          # PA relative to Clump 1's
+        ax.set_ylim(0,minmaxaxis)      # Deprojected radius in arcsec
+        if ( (nx % 2) == 0):
+            dpix = 0.5
+        else:
+            dpix = 0.0
+        a0 = cdelt*(nx//2.-dpix)   # >0
+
         ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
-        ax.set_xlabel('Position angle / deg')
-        ax.set_ylabel('Radius / arcsec')
+        ax.set_xticks((-180,-120,-60,0,60,120,180))
+        #ax.set_yticks((0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7))
+        ax.set_xlabel('Position Angle [deg]')
+        ax.set_ylabel('Radius [arcsec]')
 
-        # x- and y-ranges
-        ax.set_xlim(0,360)      # PA between 0 and 360 degrees
-        ax.set_ylim(rmin,rmax)  # radius between rmin and rmax (see above)
-        
         # imshow does a bilinear interpolation. You can switch it off by putting
         # interpolation='none'
-        min = Inu_polar3.min()
-        max = Inu_polar3.max()
-        CM = ax.imshow(np.transpose(Inu_polar3), origin='lower', cmap='nipy_spectral', interpolation='bilinear', vmin=min, vmax=max, extent=[0.0,360.0,rmin,rmax],aspect='auto')
+        min = convolved_intensity.min()  # not exactly same as 0
+        max = convolved_intensity.max()
+        CM = ax.imshow(convolved_intensity, origin='lower', cmap='nipy_spectral', interpolation='bilinear', extent=[-180,180,0,a0], vmin=min, vmax=max, aspect='auto')   # (left, right, bottom, top)
 
-        # Add wavelength in top-left corner
-        strlambda = '$\lambda$ = '+str(wavelength)+' mm'
-        ax.text(30.0,rmin+0.9*(rmax-rmin),strlambda, fontsize=18, color = 'white')
+        # Add wavelength in bottom-left corner
+        strlambda = str(wavelength)+' mm (model)'
+        if wavelength < 0.01:
+            strlambda = str(wavelength*1e3)+'$\mu$m (model)'
+        ax.text(60,0.02,strlambda,fontsize=16,color='white',weight='bold')
 
         # plot color-bar
         from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -1356,13 +1871,15 @@ if recalc_fluxmap == 'Yes':
         cax.xaxis.set_ticks_position('top')
         cb =  plt.colorbar(CM, cax=cax, orientation='horizontal')
         cax.xaxis.tick_top()
-        cax.xaxis.set_tick_params(labelsize=15, direction='out')
-        cax.yaxis.set_tick_params(labelsize=15, direction='out')
-        cax.text(.990, 0.30, strflux, fontsize=15, horizontalalignment='right', color='white')
+        cax.xaxis.set_tick_params(labelsize=20, direction='out')
+        cax.yaxis.set_tick_params(labelsize=20, direction='out')
+        cax.text(.990, 0.22, strflux, fontsize=20, horizontalalignment='right', color='white', weight='bold')
 
-        # save in pdf file
-        plt.savefig('./'+fileout, bbox_inches='tight', dpi=160)
+        plt.savefig('./'+fileout, dpi=160)
         plt.clf()
+
+        os.system('rm -rf deproj_polar_dir')
+        os.chdir(currentdir)
 
 
 # =========================
@@ -1370,67 +1887,94 @@ if recalc_fluxmap == 'Yes':
 # =========================
 if calc_abs_map == 'Yes':
     print('--------- Computing 2D analytical solution to RT equation w/o scattering ----------')
-    # read information on the dust particles
-    (rad, azi, vr, vt, Stokes, a) = np.loadtxt(dir+'/dustsystat'+str(on)+'.dat', unpack=True)
 
-    # We need to recompute dustcube again as we sweeped it off the memory before. Since it
-    # is now quick to compute it, we simply do it again!
-    # Populate dust bins
-    dust = np.zeros((nsec*nrad*nbin))
-    for m in range (len(a)):   # CB: sum over dust particles
-        r = rad[m]
-        t = azi[m]
-        # radial index of the cell where the particle is
-        if radialspacing == 'L':
-            i = int(np.log(r/gas.xm.min())/np.log(gas.xm.max()/gas.xm.min()) * nrad)
-        else:
-            i = np.argmin(np.abs(gas.xm-r))
-        if (i < 0 or i >= nrad):
-            print('pb with i = ', i, ' in calc_abs_map step: I must exit!')
-            exit()
-        # azimuthal index of the cell where the particle is
-        # (general expression since grid spacing in azimuth is always arithmetic)
-        j = int((t-gas.zm.min())/(gas.zm.max()-gas.zm.min()) * nsec)
-        if (j < 0 or j >= nsec):
-            print('pb with j = ', j, ' in calc_abs_map step: I must exit!')
-            exit()
-        # particle size
-        pcsize = a[m]   
-        # find out which bin particle belongs to. Here we do nearest-grid point. We
-        # could also do a bilinear interpolation!
-        ibin = int(np.log(pcsize/bins.min())/np.log(bins.max()/bins.min()) * nbin)
-        if (ibin >= 0 and ibin < nbin):
-            k = ibin*nsec*nrad + j*nrad + i
-            dust[k] +=1
-            nparticles[ibin] += 1
-            avgstokes[ibin] += Stokes[m]
+    # ---------------------------
+    # a) assume dust surface density != gas surface density (default case)
+    # ---------------------------
+    if dustdens_eq_gasdens == 'No':
+        # read information on the dust particles
+        (rad, azi, vr, vt, Stokes, a) = np.loadtxt(dir+'/dustsystat'+str(on)+'.dat', unpack=True)
 
-    for ibin in range(nbin):
-        if nparticles[ibin] == 0:
-            nparticles[ibin] = 1
-        avgstokes[ibin] /= nparticles[ibin]
-        print(str(nparticles[ibin])+' grains between '+str(bins[ibin])+' and '+str(bins[ibin+1])+' meters')
+        # We need to recompute dustcube again as we sweeped it off the memory before. Since it
+        # is now quick to compute it, we simply do it again!
+        # Populate dust bins
+        dust = np.zeros((nsec*nrad*nbin))
+        for m in range (len(a)):   # CB: sum over dust particles
+            r = rad[m]
+            t = azi[m]
+            # radial index of the cell where the particle is
+            if radialspacing == 'L':
+                i = int(np.log(r/gas.xm.min())/np.log(gas.xm.max()/gas.xm.min()) * nrad)
+            else:
+                i = np.argmin(np.abs(gas.xm-r))
+            if (i < 0 or i >= nrad):
+                sys.exit('pb with i = ', i, ' in calc_abs_map step: I must exit!')
+            # azimuthal index of the cell where the particle is
+            # (general expression since grid spacing in azimuth is always arithmetic)
+            j = int((t-gas.zm.min())/(gas.zm.max()-gas.zm.min()) * nsec)
+            if (j < 0 or j >= nsec):
+                sys.exit('pb with j = ', j, ' in calc_abs_map step: I must exit!')
+            # particle size
+            pcsize = a[m]   
+            # find out which bin particle belongs to. Here we do nearest-grid point. We
+            # could also do a bilinear interpolation!
+            ibin = int(np.log(pcsize/bins.min())/np.log(bins.max()/bins.min()) * nbin)
+            if (ibin >= 0 and ibin < nbin):
+                k = ibin*nsec*nrad + j*nrad + i
+                dust[k] +=1
+                nparticles[ibin] += 1
+                avgstokes[ibin] += Stokes[m]
+
+        for ibin in range(nbin):
+            if nparticles[ibin] == 0:
+                nparticles[ibin] = 1
+            avgstokes[ibin] /= nparticles[ibin]
+            print(str(nparticles[ibin])+' grains between '+str(bins[ibin])+' and '+str(bins[ibin+1])+' meters')
             
-    # dustcube currently contains N_i (r,phi), the number of particles per bin size in every grid cell
-    dustcube = dust.reshape(nbin, nsec, nrad)  
-    dustcube = np.swapaxes(dustcube,1,2)  # means nbin, nrad, nsec
+        # dustcube currently contains N_i (r,phi), the number of particles per bin size in every grid cell
+        dustcube = dust.reshape(nbin, nsec, nrad)  
+        dustcube = np.swapaxes(dustcube,1,2)  # means nbin, nrad, nsec
 
-    # Mass of gas in units of the star's mass
-    Mgas = np.sum(gas.data*surface)
-    print('Mgas / Mstar= '+str(Mgas)+' and Mgas [kg] = '+str(Mgas*gas.cumass))
+        # Mass of gas in units of the star's mass
+        Mgas = np.sum(gas.data*surface)
+        print('Mgas / Mstar= '+str(Mgas)+' and Mgas [kg] = '+str(Mgas*gas.cumass))
 
-    frac = np.zeros(nbin)
-    # finally compute dust surface density for each size bin
-    for ibin in range(nbin):
-        # fraction of dust mass in current size bin 'ibin', easy to check numerically that sum_frac = 1
-        frac[ibin] = (bins[ibin+1]**(4.0-pindex) - bins[ibin]**(4.0-pindex)) / (amax**(4.0-pindex) - amin**(4.0-pindex))
-        # total mass of dust particles in current size bin 'ibin'
-        M_i_dust = ratio * Mgas * frac[ibin]
-        # dustcube, which contained N_i(r,phi), now contains sigma_i_dust (r,phi)
-        dustcube[ibin,:,:] *= M_i_dust / surface / nparticles[ibin]
-        # conversion in g/cm^2
-        dustcube[ibin,:,:] *= (gas.cumass*1e3)/((gas.culength*1e2)**2.)  # dimensions: nbin, nrad, nsec
+        frac = np.zeros(nbin)
+        # finally compute dust surface density for each size bin
+        for ibin in range(nbin):
+            # fraction of dust mass in current size bin 'ibin', easy to check numerically that sum_frac = 1
+            frac[ibin] = (bins[ibin+1]**(4.0-pindex) - bins[ibin]**(4.0-pindex)) / (amax**(4.0-pindex) - amin**(4.0-pindex))
+            # total mass of dust particles in current size bin 'ibin'
+            M_i_dust = ratio * Mgas * frac[ibin]
+            # dustcube, which contained N_i(r,phi), now contains sigma_i_dust (r,phi)
+            dustcube[ibin,:,:] *= M_i_dust / surface / nparticles[ibin]
+            # conversion in g/cm^2
+            dustcube[ibin,:,:] *= (gas.cumass*1e3)/((gas.culength*1e2)**2.)  # dimensions: nbin, nrad, nsec
 
+        # Overwrite first bin (ibin = 0) to model extra bin with small dust tightly coupled to the gas
+        if bin_small_dust == 'Yes':
+            frac[0] *= 5e3
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            print("Bin with index 0 changed to include arbitrarilly small dust tightly coupled to the gas")
+            print("Mass fraction of bin 0 changed to: ",str(frac[0]))
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            imin = np.argmin(np.abs(gas.xmed-1.2))  # radial index corresponding to 0.25"
+            imax = np.argmin(np.abs(gas.xmed-3.0))  # radial index corresponding to 0.6"
+            dustcube[0,imin:imax,:] = gas.data[imin:imax,:] * ratio * frac[0] * (gas.cumass*1e3)/((gas.culength*1e2)**2.)  # dimensions: nbin, nrad, nsec
+
+    # ---------------------------
+    # b) assume dust surface density = gas surface density
+    # ---------------------------
+    if dustdens_eq_gasdens == 'Yes':
+        dust = np.zeros((nsec*nrad*nbin))
+        # dustcube currently contains N_i (r,phi), the number of particles per bin size in every grid cell
+        dustcube = dust.reshape(nbin, nsec, nrad)  
+        dustcube = np.swapaxes(dustcube,1,2)  # means nbin, nrad, nsec
+        frac = np.zeros(nbin)
+        for ibin in range(nbin):
+            frac[ibin] = (bins[ibin+1]**(4.0-pindex) - bins[ibin]**(4.0-pindex)) / (amax**(4.0-pindex) - amin**(4.0-pindex))
+            dustcube[ibin,:,:] = gas.data * ratio * frac[ibin] * (gas.cumass*1e3)/((gas.culength*1e2)**2.)  # dimensions: nbin, nrad, nsec
+        
     # We then need to recompute absorption mass opacity from dustkappa files
     abs_opacity = np.zeros(nbin)
     lbda1 = wavelength * 1e3  # wavelength in microns
@@ -1446,15 +1990,15 @@ if calc_abs_map == 'Yes':
             sizemax_file = 3e-1          # in meters, do not edit!
             nbfiles = 90
         else:
-            print('I do not have pre-calculated opacity files for your type of species in the opacity_dir: I must exit!')
-            exit()            
+            sys.exit('I do not have pre-calculated opacity files for your type of species in the opacity_dir: I must exit!')
         size_file = sizemin_file * (sizemax_file/sizemin_file)**(np.arange(nbfiles)/(nbfiles-1.0))
     # Loop over size bins
     for k in range(nbin):
         if precalc_opac == 'No':
             # Case where we use dustkappa* files in current directory
             file = 'dustkappa_'+species+str(k)+'.inp'
-            (lbda, kappa_abs, kappa_sca, g) = np.loadtxt(file, unpack=True, skiprows=2)
+            (lbda, kappa_abs, kappa_sca, g) = read_opacities(file)
+            #(lbda, kappa_abs, kappa_sca, g) = np.loadtxt(file, unpack=True, skiprows=2)
             i1 = np.argmin(np.abs(lbda-lbda1))
             # linear interpolation (in log)
             l1 = lbda[i1-1]
@@ -1470,8 +2014,10 @@ if calc_abs_map == 'Yes':
                 index_sup = index_inf+1
                 file_index_inf = opacdir+'/dustkappa_'+species+str(index_inf)+'.inp'
                 file_index_sup = opacdir+'/dustkappa_'+species+str(index_sup)+'.inp'
-                (lbda_inf, kappa_abs_inf, kappa_sca_inf, g_inf) = np.loadtxt(file_index_inf, unpack=True, skiprows=2)
-                (lbda_sup, kappa_abs_sup, kappa_sca_sup, g_sup) = np.loadtxt(file_index_sup, unpack=True, skiprows=2)
+                (lbda_inf, kappa_abs_inf, kappa_sca_inf, g_inf) = read_opacities(file_index_inf)
+                #np.loadtxt(file_index_inf, unpack=True, skiprows=2)
+                (lbda_sup, kappa_abs_sup, kappa_sca_sup, g_sup) = read_opacities(file_index_sup)
+                #np.loadtxt(file_index_sup, unpack=True, skiprows=2)
                 i1_inf = np.argmin(np.abs(lbda_inf-lbda1))
                 l1 = lbda_inf[i1_inf-1]
                 l2 = lbda_inf[i1_inf+1]
@@ -1487,7 +2033,8 @@ if calc_abs_map == 'Yes':
                 abs_opacity[k] /= ( np.log(l2/l1) * np.log(size_file[index_sup]/size_file[index_inf]) )
             if (index_inf == nbfiles-1):
                 file_index_inf = opacdir+'/dustkappa_'+species+str(index_inf)+'.inp'
-                (lbda_inf, kappa_abs_inf, kappa_sca_inf, g_inf) = np.loadtxt(file_index_inf, unpack=True, skiprows=2)
+                (lbda_inf, kappa_abs_inf, kappa_sca_inf, g_inf) = read_opacities(file_index_inf)
+                #np.loadtxt(file_index_inf, unpack=True, skiprows=2)
                 i1_inf = np.argmin(np.abs(lbda_inf-lbda1))
                 l1 = lbda_inf[i1_inf-1]
                 l2 = lbda_inf[i1_inf+1]
@@ -1512,9 +2059,6 @@ if calc_abs_map == 'Yes':
     optical_depth = np.swapaxes(optical_depth,0,1)  # means nsec, nrad
 
     print('max(optical depth) = ', optical_depth.max())
-
-    # free RAM memory
-    del dustcube, abs_opacity_2D
 
     # Get dust temperature
     if Tdust_eq_Tgas == 'No':
@@ -1596,8 +2140,7 @@ if calc_abs_map == 'Yes':
                 Inu_cart[j,i] /= ( (R[ir+1]-R[ir])*(Tjrp1-Tjr) )
                 '''
                 if (Inu_cart[j,i] < 0):
-                    print("Inu_cart < 0 in calc_abs_map: I must exit!")
-                    exit()
+                    sys.exit("Inu_cart < 0 in calc_abs_map: I must exit!")
                 '''
             else:
                 Inu_cart[j,i] = 0.0
@@ -1625,7 +2168,7 @@ if calc_abs_map == 'Yes':
             yc = -xgrid[i]*np.sin(posangle_in_rad) + ygrid[j]*np.cos(posangle_in_rad)
             ir = int((xc-xgrid.min())/(xgrid.max()-xgrid.min()) * (nbpixels-1.0))
             jr = int((yc-ygrid.min())/(ygrid.max()-ygrid.min()) * (nbpixels-1.0))
-            if ( (ir < nbpixels-1) and (jr < nbpixels-1) ):
+            if ( (ir >= 0) and (jr >= 0) and (ir < nbpixels-1) and (jr < nbpixels-1) ):
                 Inu_cart3[j,i] = Inu_cart2[jr,ir] * (xgrid[ir+1]-xc) * (ygrid[jr+1]-yc) \
                     + Inu_cart2[jr+1,ir]   * (xgrid[ir+1]-xc) * (yc-ygrid[jr]) \
                     + Inu_cart2[jr,ir+1]   * (xc-xgrid[ir]) * (ygrid[jr+1]-yc) \
@@ -1633,13 +2176,13 @@ if calc_abs_map == 'Yes':
                 Inu_cart3[j,i] /= ((xgrid[ir+1]-xgrid[ir]) * (ygrid[jr+1]-ygrid[jr]))
             else:
                 if ( (ir >= nbpixels-1) and (jr < nbpixels-1) ):
-                    Inu_cart3[j,i] = Inu_cart2[jr-1,nbpixels-1]
+                    Inu_cart3[j,i] = 0.0 # Inu_cart2[jr-1,nbpixels-1]
                 if ( (jr >= nbpixels-1) and (ir < nbpixels-1) ):
-                    Inu_cart3[j,i] = Inu_cart2[nbpixels-1,ir-1]
+                    Inu_cart3[j,i] = 0.0 # Inu_cart2[nbpixels-1,ir-1]
                 if ( (ir >= nbpixels-1) and (jr >= nbpixels-1) ):
-                    Inu_cart3[j,i] = Inu_cart2[nbpixels-1,nbpixels-1]
+                    Inu_cart3[j,i] = 0.0 # Inu_cart2[nbpixels-1,nbpixels-1]
 
-    
+
     # Inu contains the specific intensity in Jy/steradian projected onto the image plane
     Inu = Inu_cart3
     # Disc distance in metres
@@ -1648,6 +2191,17 @@ if calc_abs_map == 'Yes':
     pixsurf_ster = (dxy*gas.culength/D)**2
     Inu *= pixsurf_ster    # Jy/pixel
     print("Total flux of 2D method [Jy] = "+str(np.sum(Inu)))
+
+    # Add white (Gaussian) noise to raw flux image to simulate effects of 'thermal' noise
+    if add_noise == 'Yes':
+        # beam area in pixel^2
+        beam =  (np.pi/(4.*np.log(2.)))*bmaj*bmin/(dxy**2.)
+        # noise standard deviation in Jy per pixel (I've checked the expression below works well)
+        noise_dev_std_Jy_per_pixel = noise_dev_std / np.sqrt(0.5*beam)  # 1D
+        # noise array
+        noise_array = np.random.normal(0.0,noise_dev_std_Jy_per_pixel,size=nbpixels*nbpixels)
+        noise_array = noise_array.reshape(nbpixels,nbpixels)
+        Inu += noise_array
     
     # pixel (cell) size in arcseconds 
     dxy *= (gas.culength/1.5e11/distance)  
@@ -1660,7 +2214,7 @@ if calc_abs_map == 'Yes':
     # check beam is correctly handled by inserting a source point at the
     # origin of the raw intensity image
     if check_beam == 'Yes':
-        Inu[nbpixels//2-1,nbpixels//2-1] = 1000.0*Inu.max()
+        Inu[nbpixels//2-1,nbpixels//2-1] = 500.0*Inu.max()
 
     # Call to Gauss_filter function
     print('convolution...')
@@ -1674,9 +2228,9 @@ if calc_abs_map == 'Yes':
         convolved_Inu = smooth2D * 1e6 * beam   # microJy/beam
         strflux = '$\mu$Jy/beam'
 
-    # -------------------------------------
-    # SP: save 2D flux map solution to fits 
-    # -------------------------------------
+    # ---------------------------------
+    # save 2D flux map solution to fits 
+    # ---------------------------------
     hdu = fits.PrimaryHDU()
     hdu.header['BITPIX'] = -32    
     hdu.header['NAXIS'] = 2
@@ -1691,8 +2245,8 @@ if calc_abs_map == 'Yes':
     hdu.header['CRVAL2'] = float(0.0)
     hdu.header['CDELT1'] = float(-1.*dxy)
     hdu.header['CDELT2'] = float(dxy)
-    hdu.header['CUNIT1'] = 'DEG     '
-    hdu.header['CUNIT2'] = 'DEG     '
+    hdu.header['CUNIT1'] = 'arcsec    '
+    hdu.header['CUNIT2'] = 'arcsec    '
     hdu.header['CRPIX1'] = float((nbpixels+1.)/2.)
     hdu.header['CRPIX2'] = float((nbpixels+1.)/2.)
     if strflux == 'mJy/beam':
@@ -1703,25 +2257,28 @@ if calc_abs_map == 'Yes':
     hdu.header['BSCALE'] = 1
     hdu.header['BZERO'] = 0
     # keep track of all parameters in params.dat file
-    for i in range(len(lines_params)):
-        hdu.header[var[i]] = par[i]
+    # for i in range(len(lines_params)):
+    #    hdu.header[var[i]] = par[i]
     hdu.data = convolved_Inu
     inbasename = os.path.basename('./'+outfile)
-    jybeamfileout=re.sub('.fits', '_JyBeam.fits', inbasename)
+    if add_noise == 'Yes':
+        jybeamfileout=re.sub('.fits', '_wn_JyBeam2D.fits', inbasename)
+    else:
+        jybeamfileout=re.sub('.fits', '_JyBeam2D.fits', inbasename)
     hdu.writeto(jybeamfileout, overwrite=True)
 
     # --------------------
     # plotting image panel
     # --------------------
-    matplotlib.rcParams.update({'font.size': 16})
+    matplotlib.rcParams.update({'font.size': 20})
     matplotlib.rc('font', family='Arial') 
     fontcolor='white'
 
-    inbasename = os.path.basename('./'+outfile)
     # name of pdf file for final image
-    fileout = re.sub('.fits', '2D.pdf', inbasename)
+    fileout = re.sub('.fits', '.pdf', jybeamfileout)
     fig = plt.figure(figsize=(8.,8.))
     ax = plt.gca()
+    plt.subplots_adjust(left=0.15, right=0.94, top=0.95, bottom=0.09)
 
     # Set x-axis orientation, x- and y-ranges
     # Convention is that RA offset increases leftwards (ie,
@@ -1738,29 +2295,35 @@ if calc_abs_map == 'Yes':
     else:
         da = abs(a0)
     ax.set_xlim(da,-da)      # x (=R.A.) increases leftward
+    #ax.set_xlim(minmaxaxis,-minmaxaxis)      # x (=R.A.) increases leftward
     mina = da
     maxa = -da
     xlambda = mina - 0.166*da
     ax.set_ylim(-da,da)
+    #ax.set_ylim(-minmaxaxis,minmaxaxis)      # x (=R.A.) increases leftward
     dmin = -da
     dmax = da
 
+    # x- and y-ticks and labels
     ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
-    ax.set_xlabel(r'$\Delta \alpha $ / arcsec')
-    ax.set_ylabel(r'$\Delta \delta $ / arcsec')
+    ax.set_yticks(ax.get_xticks())    # set same ticks in x and y in cartesian 
+    ax.set_xlabel('RA offset [arcsec]')
+    ax.set_ylabel('Dec offset [arcsec]')
 
     # imshow does a bilinear interpolation. You can switch it off by putting
     # interpolation='none'
-    min = convolved_Inu.min()
+    min = 0.0  # convolved_Inu.min()
     max = convolved_Inu.max()
     CM = ax.imshow(convolved_Inu, origin='lower', cmap='nipy_spectral', interpolation='bilinear', extent=[a0,a1,d0,d1], vmin=min, vmax=max)
 
     # Add wavelength in top-left corner
-    strlambda = '$\lambda$ = '+str(wavelength)+' mm'
-    ax.text(xlambda,dmax-0.166*da,strlambda, fontsize=18, color = 'white')
+    strlambda = str(wavelength)+' mm (model)'
+    if wavelength < 0.01:
+        strlambda = str(wavelength*1e3)+'$\mu$m (model)'
+    ax.text(xlambda,dmax-0.166*da,strlambda, fontsize=20, color = 'white', weight='bold')
 
     # Add + sign at the origin
-    ax.plot(0.0,0,0,'+',color='white')
+    ax.plot(0.0,0.0,'+',color='white',markersize=10)
 
     # plot beam
     from matplotlib.patches import Ellipse
@@ -1778,71 +2341,91 @@ if calc_abs_map == 'Yes':
     cax.xaxis.set_ticks_position('top')
     cb =  plt.colorbar(CM, cax=cax, orientation='horizontal')
     cax.xaxis.tick_top()
-    cax.xaxis.set_tick_params(labelsize=15, direction='out')
-    cax.yaxis.set_tick_params(labelsize=15, direction='out')
-    cax.text(.990, 0.30, strflux, fontsize=15, horizontalalignment='right', color='white')
+    cax.xaxis.set_tick_params(labelsize=20, direction='out')
+    cax.yaxis.set_tick_params(labelsize=20, direction='out')
+    cax.text(.990, 0.22, strflux, fontsize=20, horizontalalignment='right', color='white', weight='bold')
 
     plt.savefig('./'+fileout, bbox_inches='tight', dpi=160)
     plt.clf()
 
+    # =====================
+    # Compute deprojection and polar expansion (SP)
+    # =====================
+    if deproj_polar == 'Yes':
+        currentdir = os.getcwd()
+        alpha_min = 0.;          # deg, PA of offset from the star
+        Delta_min = 0.;          # arcsec, amplitude of offset from the star
+        RA = 0.0  # if input image is a prediction, star should be at the center
+        DEC = 0.0 # note that this deprojection routine works in WCS coordinates
+        cosi = np.cos(inclination_input*np.pi/180.)
 
-    # --------------------
-    # plotting image in polar coordinates
-    # --------------------
-    if polar_extra_map == 'Yes':
-        print('projecting convolved intensity map onto polar plane...')
-        Inu_polar2 = np.zeros(nbpixels*nbpixels)
-        Inu_polar2 = Inu_polar2.reshape(nbpixels,nbpixels)
-        # x-grid contains right ascension offset
-        xgrid = a0 + (a1-a0)*np.arange(nbpixels)/(nbpixels-1)
-        xgrid = -xgrid
-        # x-grid contains declination offset
-        ygrid = d0 + (d1-d0)*np.arange(nbpixels)/(nbpixels-1)
-        # rc-grid is radius in the polar map
-        rmin = 0.0    # specify other value in you want to do a radial zoom
-        rmax = np.minimum(minmaxaxis,abs(a0))
-        rc   = rmin + (rmax-rmin)* np.arange(nbpixels)/(nbpixels-1)
-        # phic-grid is position angle in the polar map
-        phic = 2.0*np.pi * np.arange(nbpixels)/nbpixels
-        for i in range(nbpixels):
-            for j in range(nbpixels):
-                # remove 3pi/2 to phic to comply with definition of position angle east of north
-                xc = rc[i]*np.cos(phic[j]-1.5*np.pi)    
-                yc = rc[i]*np.sin(phic[j]-1.5*np.pi)
-                ir = int((xc-xgrid.min())/(xgrid.max()-xgrid.min()) * (nbpixels-1.0))
-                jr = int((yc-ygrid.min())/(ygrid.max()-ygrid.min()) * (nbpixels-1.0))
-                if ( (ir < nbpixels-1) and (jr < nbpixels-1) ):
-                    Inu_polar2[j,i] = convolved_Inu[jr,ir] * (xgrid[ir+1]-xc) * (ygrid[jr+1]-yc) \
-                        + convolved_Inu[jr+1,ir]   * (xgrid[ir+1]-xc) * (yc-ygrid[jr]) \
-                        + convolved_Inu[jr,ir+1]   * (xc-xgrid[ir]) * (ygrid[jr+1]-yc) \
-                        + convolved_Inu[jr+1,ir+1] * (xc-xgrid[ir]) * (yc-ygrid[jr])
-                    Inu_polar2[j,i] /= ((xgrid[ir+1]-xgrid[ir]) * (ygrid[jr+1]-ygrid[jr]))
-                else:
-                    Inu_polar2[j,i] = 0.0
+        print('deprojection around PA [deg] = ',posangle)
+        print('and inclination [deg] = ',inclination_input)
+        
+        # makes a new directory "deproj_polar_dir" and calculates a number
+        # of products: copy of the input image [_fullim], centered at
+        # (RA,DEC) [_centered], deprojection by cos(i) [_stretched], polar
+        # image [_polar], etc. Also, a _radial_profile which is the
+        # average radial intensity.
+        exec_polar_expansions(jybeamfileout,'deproj_polar_dir',posangle,cosi,RA=RA,DEC=DEC,
+                              alpha_min=alpha_min, Delta_min=Delta_min,
+                              XCheckInv=False,DoRadialProfile=False,
+                              DoAzimuthalProfile=False,PlotRadialProfile=False,
+                              a_min=0.02,a_max=1.0,zoomfactor=1.)
+        
+        # Save polar fits in current directory
+        fileout = re.sub('.pdf', '_polar.fits', fileout)
+        command = 'cp deproj_polar_dir/'+fileout+' .'
+        os.system(command)
 
-        # name of pdf file for final image
-        fileout = re.sub('.fits', '2Dpolar.pdf', inbasename)
+        filein = re.sub('.pdf', '_polar.fits', fileout)
+        # Read fits file with deprojected field in polar coordinates
+        f = fits.open(filein)
+        convolved_intensity = f[0].data    # uJy/beam
+
+        # azimuthal shift such that PA=0 corresponds to y-axis pointing upwards, and
+        # increases counter-clockwise from that axis
+        if xaxisflip == 'Yes':
+            jshift = int(nbpixels/4)
+        else:
+            jshift = int(nbpixels/4)
+        convolved_intensity = np.roll(convolved_intensity, shift=-jshift, axis=1)
+
+        # -------------------------------
+        # plot image in polar coordinates
+        # -------------------------------
+        fileout = re.sub('.fits', '.pdf', filein)
         fig = plt.figure(figsize=(8.,8.))
         ax = plt.gca()
+        plt.subplots_adjust(left=0.12, right=0.96, top=0.95, bottom=0.09)
 
-        # Labels and ticks
-        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
-        ax.set_xlabel('Position angle / deg')
-        ax.set_ylabel('Radius / arcsec')
-
-        # x- and y-ranges
-        ax.set_xlim(0,360)      # PA between 0 and 360 degrees
-        ax.set_ylim(rmin,rmax)  # radius between rmin and rmax (see above)
+        # Set x- and y-ranges
+        ax.set_xlim(-180,180)          # PA relative to Clump 1's
+        ax.set_ylim(0,minmaxaxis)      # Deprojected radius in arcsec
         
+        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+        #ax.set_yticks((0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7))
+        ax.set_xticks((-180,-120,-60,0,60,120,180))
+        ax.set_xlabel('Position angle [deg]')
+        ax.set_ylabel('Radius [arcsec]')
+
         # imshow does a bilinear interpolation. You can switch it off by putting
         # interpolation='none'
-        min = Inu_polar2.min()
-        max = Inu_polar2.max()
-        CM = ax.imshow(np.transpose(Inu_polar2), origin='lower', cmap='nipy_spectral', interpolation='bilinear', vmin=min, vmax=max, extent=[0.0,360.0,rmin,rmax],aspect='auto')
+        min = convolved_intensity.min()  # not exactly same as 0
+        max = convolved_intensity.max()
+        CM = ax.imshow(convolved_intensity, origin='lower', cmap='nipy_spectral', interpolation='bilinear', extent=[-180,180,0,a0], vmin=min, vmax=max, aspect='auto')   # (left, right, bottom, top)
 
-        # Add wavelength in top-left corner
-        strlambda = '$\lambda$ = '+str(wavelength)+' mm'
-        ax.text(30.0,rmin+0.9*(rmax-rmin),strlambda, fontsize=18, color = 'white')
+        # Plot axes to show intensity peaks
+        ax.plot([-180,180],[0.53,0.53],'--',linewidth=2,color='darkgray')
+        ax.plot([0,0],[0.0,0.7],'--',linewidth=2,color='darkgray')
+        ax.plot([-180,180],[0.31,0.31],'--',linewidth=2,color='darkgray')
+        ax.plot([-130,-130],[0.0,0.7],'--',linewidth=2,color='darkgray')
+
+        # Add wavelength in bottom-left corner
+        strlambda = str(wavelength)+' mm (model)'
+        if wavelength < 0.01:
+            strlambda = str(wavelength*1e3)+'$\mu$m (model)'
+        ax.text(60,0.02,strlambda,fontsize=16,color='white',weight='bold')
 
         # plot color-bar
         from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -1852,13 +2435,15 @@ if calc_abs_map == 'Yes':
         cax.xaxis.set_ticks_position('top')
         cb =  plt.colorbar(CM, cax=cax, orientation='horizontal')
         cax.xaxis.tick_top()
-        cax.xaxis.set_tick_params(labelsize=15, direction='out')
-        cax.yaxis.set_tick_params(labelsize=15, direction='out')
-        cax.text(.990, 0.30, strflux, fontsize=15, horizontalalignment='right', color='white')
+        cax.xaxis.set_tick_params(labelsize=20, direction='out')
+        cax.yaxis.set_tick_params(labelsize=20, direction='out')
+        cax.text(.990, 0.22, strflux, fontsize=20, horizontalalignment='right', color='white', weight='bold')
 
-        # save in pdf file
-        plt.savefig('./'+fileout, bbox_inches='tight', dpi=160)
+        plt.savefig('./'+fileout, dpi=160)
         plt.clf()
+
+        os.system('rm -rf deproj_polar_dir')
+        os.chdir(currentdir)
 
         
 print('--------- done! ----------')
