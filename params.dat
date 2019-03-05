@@ -1,37 +1,75 @@
-dir		out10d2		name_of_local_simulation_directory
-on		100		output_number
-wavelength	1.3 		wavelength_in_mm
-amin		1e-5    	minimum_particle_size_in_meters
-amax		1e-3		maximum_particle_size_in_meters
-pindex		3.0		minus_power_law_exponent_of_dust_size_distribution
-ratio		3e-2		dust_to_gas_mass_ratio
-nbin		10		number_of_size_bins
-distance	114.0		disc_distance_in_parsecs
-inclination	12.5		disc_inclination_in_degrees
-phiangle	0.0		disc_phi_angle_in_degrees
-posangle	5.0		disc_position_angle_in_degrees_observed_value
-rstar		1.5		star_radius_in_solar_radii
-teff		7320.0		star_effective_temperature
-nbpixels	2048		number_of_pixels_for_flux_map
-ncol		32		number_of_cells_in_colatitude_in_radmc3d_grid
-z_expansion	T		type_of_vertical_expansion_for_dust_density_T_or_T2_or_F
-recalc_density	Yes		do_we_recompute_dust_densities_yes_or_no
-recalc_opac	Yes		do_we_recompute_dust_opacities_yes_or_no
-precalc_opac	No		do_we_use_precalculated_opacities_in_opacity_dir_directory
-species		mix_2species	type_of_dust_particles_for_opacity_calculations
-opacity_dir	/Users/clement/fargo/python/opac	name_of_directory_with_opacity_files_a_global_extension_is_needed
-recalc_radmc	Yes		do_we_run_radmc3D_yes_or_no
-recalc_fluxmap	No		do_we_run_convolved_flux_map_from_raw_flux_map_yes_or_no
-calc_abs_map	Yes		do_we_compute_2D_analytical_solution_wo_scattering_yes_or_no
-Tdust_eq_Tgas	No		do_we_take_hydro_gas_temperature_for_Tdust_yes_or_no
-polar_extra_map Yes             do_we_also_plot_intensity_map_in_polar_view_yes_or_no
-scat_mode	0		scattering_mode_max_parameter_in_radmc3d
-nb_photons	1e6		number_of_photos_for_raytracing
-nb_photons_scat	1e6		number_of_photos_for_raytracing_scattering
-secondorder	Yes		second_order_ray_tracing_yes_or_no
-bmaj		0.027	beam_major_axis_in_arcseconds
-bmin		0.020	beam_minor_axis_in_arcseconds
-bpaangle	75.0	beam_position_angle_in_degrees_observed_value
-check_beam	No		check_beam_is_correct_by_adding_source_point_at_origin
-xaxisflip	No		flip_x_axis_in_disc_simulation_plane_yes_or_no
-minmaxaxis	0.8		max_of_x_and_y_in_intesity_image_in_arcseconds
+### Simulation parameters
+dir		out_newfluffy_HR2R	# local directory of fargo simulation
+on		3494			# fargo's output number
+xaxisflip	Yes			# flip x-axis in disc simulation plane?
+
+
+### Dust size distribution
+wavelength	9.0		# wavelength in mm
+amin		1e-5    	# minimum particle size in meters
+amax		1e-2		# maximum particle size in meters
+pindex		3.0		# minus power law exponent of dust size distribution
+ratio		2e-2		# dust-to-gas mass ratio
+nbin		30		# number of size bins
+ncol		36		# number of cells in colatitude in radmc3d grid
+z_expansion	T		# type of vertical expansion for dust density (T, T2 or F)
+zmax_over_H	2.0		# maximum altitude of the 3D grid in pressure scale heights
+
+
+### Dust opacities
+species		mix_2species_porous_ice70	# type of dust particles for opacity calculations
+precalc_opac	No			# do we use precalculated dust opacities?
+opacity_dir	/home/cbaruteau/fargo/python/opac	# if so, name of directory with opacity files (a global extension is needed)
+plot_opac	No			# plot opacities vs. grain size?
+
+
+### Disc and star properties
+distance	160.0		# disc distance in parsecs
+inclination	21.0		# disc inclination in degrees
+phiangle	-10.0		# disc phi angle in degrees
+posangle	62.0		# disc position angle in degrees (observed value)
+rstar		2.0		# star radius in solar radii
+teff		7340.0		# star effective temperature
+
+
+### what do we do?
+recalc_density	Yes		# do we recompute dust densities?
+bin_small_dust	No		# do we include a bin with small dust tightly coupled to the gas?
+recalc_opac	Yes		# do we recompute dust opacities?
+recalc_radmc	Yes		# do we run radmc3D (thermal Monte-Carlo + ray tracing)?
+plot_tau	No		# do we plot a raw map of optical depth or a convolved flux map?
+polarized_scat	No		# do we assume polarized scattering?
+nbcores		20		# how many cores do we use for radmc3D calculation?
+recalc_rawfits	No		# if radmc3d run elsewhere, do we compute fits file for raw flux?
+recalc_fluxmap	No		# do we compute convolved flux maps from raw flux maps?
+calc_abs_map	No		# do we compute 2D analytical solution witout scattering?
+dustdens_eq_gasdens	No	# do we assume dust surface density equal to gas surface density?
+Tdust_eq_Tgas	No		# do we take the hydro gas temperature for the dust temperature?
+deproj_polar	No		# do we compute a deprojected flux map in polar coordinates?
+add_noise	No		# do we add white noise to raw flux maps?
+noise_dev_std	2e-6		# if so, noise standard deviation in Jy per beam
+plot_temperature No		# do we plot radial profile of dust temperature?
+
+
+### radmc3d parameters
+nbpixels	2048		# number of pixels for flux maps
+scat_mode	2		# scattering mode max parameter (0: absorption, 2: anisotropic scattering)
+nb_photons	1e9		# number of photos for raytracing
+nb_photons_scat	1e9		# number of photos for raytracing (scattering)
+secondorder	Yes		# second order ray tracing
+
+
+### options with polarized scattering
+truncation_radius  0.38		# truncation radius in arcsecond beyond which dust scale height is reduced
+mask_radius	   0.15		# if non-zero, apply mask around star in Qphi PI image
+
+
+### beam parameters
+bmaj		0.12		# beam major-axis in arcseconds
+bmin		0.10		# beam minor-axis in arcseconds
+bpaangle	65.0		# beam position angle in degrees (observed value)
+check_beam	No		# check beam is correct by adding source point at origin
+
+
+### Map visualisation 
+minmaxaxis	0.75		# max of x and y in intesity images (in arcseconds)
