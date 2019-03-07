@@ -1,8 +1,8 @@
 # =================================================================== 
 #                        FARGO2D to RADMC3D
-# contributing authors:
-# Clement Baruteau (CB), Sebastian Perez (SP), Marcelo Barraza (MB), 
-# Simon Casassus (SC) and Gaylor Wafflard-Fernandez (GWF)
+# contributing authors by alphabetical order:
+# Clement Baruteau (CB), Marcelo Barraza (MB), Simon Casassus (SC), 
+# Sebastian Perez (SP) and Gaylor Wafflard-Fernandez (GWF)
 # =================================================================== 
 # 
 # present program can run with either Python 2.X or Python 3.X.
@@ -26,6 +26,10 @@
 # =========================================
 #            TO DO LIST
 # =========================================
+# - should I really use temperature from MC thermal simulation and not the
+# gas temperature out of the hydro simulation? -> try to have an optional flag
+# to use the gas temperature and put it in a dust_temperature.dat file.
+# - issue with the grid? r, theta, phi and not R(cylindrical radius), theta, phi -> issue with z in z_expansion? 
 # - check that all goes well without x-axisflip!
 # =========================================
 
@@ -333,30 +337,30 @@ def exportfits(M):
     # Fits header
     hdu = fits.PrimaryHDU()
     hdu.header['BITPIX'] = -32
-    hdu.header['NAXIS'] = 4 # naxis
+    hdu.header['NAXIS'] = 2 # naxis
     hdu.header['NAXIS1'] = im_nx
     hdu.header['NAXIS2'] = im_ny
-    hdu.header['NAXIS3'] = 1
-    hdu.header['NAXIS4'] = 1
+    #hdu.header['NAXIS3'] = 1
+    #hdu.header['NAXIS4'] = 1
     hdu.header['EPOCH']  = 2000.0
     hdu.header['EQUINOX'] = 2000.0
     hdu.header['LONPOLE'] = 180.0
     hdu.header['CTYPE1'] = 'RA---SIN'
     hdu.header['CTYPE2'] = 'DEC--SIN'
-    hdu.header['CTYPE3'] = 'FREQ'
-    hdu.header['CTYPE4'] = 'STOKES'
+    #hdu.header['CTYPE3'] = 'FREQ'
+    #hdu.header['CTYPE4'] = 'STOKES'
     hdu.header['CRVAL1'] = 8.261472379700E+01 # float(0.0)
     hdu.header['CRVAL2'] = 2.533239051468E+01 # float(0.0)
-    hdu.header['CRVAL3'] = 33.0E+09
-    hdu.header['CRVAL4'] = 1.0E+00
+    #hdu.header['CRVAL3'] = 33.0E+09
+    #hdu.header['CRVAL4'] = 1.0E+00
     hdu.header['CDELT1'] = float(-1.*pixsize_x_deg)
     hdu.header['CDELT2'] = float(pixsize_y_deg)
-    hdu.header['CDELT3'] = 8.05E+09
-    hdu.header['CDELT4'] = 1.0E+00
+    #hdu.header['CDELT3'] = 8.05E+09
+    #hdu.header['CDELT4'] = 1.0E+00
     hdu.header['CUNIT1'] = 'deg     '
     hdu.header['CUNIT2'] = 'deg     '
-    hdu.header['CUNIT3'] = 'Hz     '
-    hdu.header['CUNIT4'] = ' '
+    #hdu.header['CUNIT3'] = 'Hz     '
+    #hdu.header['CUNIT4'] = ' '
     hdu.header['CRPIX1'] = float((im_nx+1.)/2.)
     hdu.header['CRPIX2'] = float((im_ny+1.)/2.)
     hdu.header['BUNIT'] = 'JY/PIXEL'
@@ -1134,7 +1138,7 @@ if (recalc_density == 'Yes' and polarized_scat == 'No'):
         print("Bin with index 0 changed to include arbitrarilly small dust tightly coupled to the gas")
         print("Mass fraction of bin 0 changed to: ",str(frac[0]))
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        imin = np.argmin(np.abs(gas.xmed-1.8))  # radial index corresponding to 0.45"
+        imin = np.argmin(np.abs(gas.xmed-1.8))  # radial index corresponding to 0.4"
         imax = np.argmin(np.abs(gas.xmed-2.8))  # radial index corresponding to 0.6"
         dustcube[0,imin:imax,:] = gas.data[imin:imax,:] * ratio * frac[0] * (gas.cumass*1e3)/((gas.culength*1e2)**2.)  # dimensions: nbin, nrad, nsec
         
@@ -1179,7 +1183,7 @@ if (recalc_density == 'Yes' and polarized_scat == 'Yes'):
         rmask_in_code_units = mask_radius*distance*au/gas.culength/1e2
         for i in range(nrad):
             if (gas.xmed[i] > rcut_in_code_units):
-                dustcube[ibin,i,:] *= ( (gas.xmed[i]/rcut_in_code_units)**(-2.0) )
+                dustcube[ibin,i,:] *= ( (gas.xmed[i]/rcut_in_code_units)**(-10.0) )
             if (gas.xmed[i] < rmask_in_code_units):
                 dustcube[ibin,i,:] = 0.0 # *= ( (gas.xmed[i]/rmask_in_code_units)**(10.0) ) CUIDADIN!
 
@@ -1572,30 +1576,30 @@ if recalc_fluxmap == 'Yes':
     # -------------------------------------
     hdu = fits.PrimaryHDU()
     hdu.header['BITPIX'] = -32    
-    hdu.header['NAXIS'] = 4  # 2
+    hdu.header['NAXIS'] = 2  # 2
     hdu.header['NAXIS1'] = nbpixels
     hdu.header['NAXIS2'] = nbpixels
-    hdu.header['NAXIS3'] = 1
-    hdu.header['NAXIS4'] = 1
+    #hdu.header['NAXIS3'] = 1
+    #hdu.header['NAXIS4'] = 1
     hdu.header['EPOCH']  = 2000.0
     hdu.header['EQUINOX'] = 2000.0
     hdu.header['LONPOLE'] = 180.0
     hdu.header['CTYPE1'] = 'RA---SIN'
     hdu.header['CTYPE2'] = 'DEC--SIN'
-    hdu.header['CTYPE3'] = 'FREQ'
-    hdu.header['CTYPE4'] = 'STOKES'
+    #hdu.header['CTYPE3'] = 'FREQ'
+    #hdu.header['CTYPE4'] = 'STOKES'
     hdu.header['CRVAL1'] = 8.261472379700E+01 # float(0.0)
     hdu.header['CRVAL2'] = 2.533239051468E+01 # float(0.0)
-    hdu.header['CRVAL3'] = 33.0E+09
-    hdu.header['CRVAL4'] = 1.0E+00
+    #hdu.header['CRVAL3'] = 33.0E+09
+    #hdu.header['CRVAL4'] = 1.0E+00
     hdu.header['CDELT1'] = hdr['CDELT1']
     hdu.header['CDELT2'] = hdr['CDELT2']
-    hdu.header['CDELT3'] = 8.05E+09
-    hdu.header['CDELT4'] = 1.0E+00
+    #hdu.header['CDELT3'] = 8.05E+09
+    #hdu.header['CDELT4'] = 1.0E+00
     hdu.header['CUNIT1'] = 'deg     '
     hdu.header['CUNIT2'] = 'deg     '
-    hdu.header['CUNIT3'] = 'Hz     '
-    hdu.header['CUNIT4'] = ' '
+    #hdu.header['CUNIT3'] = 'Hz     '
+    #hdu.header['CUNIT4'] = ' '
     hdu.header['CRPIX1'] = float((nbpixels+1.)/2.)
     hdu.header['CRPIX2'] = float((nbpixels+1.)/2.)
     if strflux == 'mJy/beam':
