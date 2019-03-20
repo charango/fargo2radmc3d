@@ -1985,14 +1985,10 @@ if calc_abs_map == 'Yes':
     if precalc_opac == 'Yes':
         opacdir = os.path.expanduser(opacity_dir)
         # Case where we use pre-calculated dustkappa* files located in opacity_dir files
-        if species == 'mix_2species':
-            sizemin_file = 1e-6          # in meters, do not edit!
-            sizemax_file = 1e-1          # in meters, do not edit!
-            nbfiles = 100
-        elif species == 'mix_2species_porous':
-            sizemin_file = 1e-5          # in meters, do not edit!
-            sizemax_file = 3e-1          # in meters, do not edit!
-            nbfiles = 90
+        # whatever the composition, precomputed opacities are for dust sizes between 1 microns and 10 cm, with 50 bins
+        sizemin_file = 1e-6          # in meters, do not edit!
+        sizemax_file = 1e-1          # in meters, do not edit!
+        nbfiles = 50                 # do not edit
         else:
             sys.exit('I do not have pre-calculated opacity files for your type of species in the opacity_dir: I must exit!')
         size_file = sizemin_file * (sizemax_file/sizemin_file)**(np.arange(nbfiles)/(nbfiles-1.0))
