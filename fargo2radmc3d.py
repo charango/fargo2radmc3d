@@ -1,8 +1,7 @@
 # =================================================================== 
 #                        FARGO2D to RADMC3D
-# contributing authors by alphabetical order:
-# Clement Baruteau (CB), Marcelo Barraza (MB), Simon Casassus (SC), 
-# Sebastian Perez (SP) and Gaylor Wafflard-Fernandez (GWF)
+# code written by Clement Baruteau (CB), Sebastian Perez (SP) and Marcelo Barraza (MB)
+# with substantial contributions from Simon Casassus (SC) and Gaylor Wafflard-Fernandez (GWF)
 # =================================================================== 
 # 
 # present program can run with either Python 2.X or Python 3.X.
@@ -26,11 +25,7 @@
 # =========================================
 #            TO DO LIST
 # =========================================
-# - should I really use temperature from MC thermal simulation and not the
-# gas temperature out of the hydro simulation? -> try to have an optional flag
-# to use the gas temperature and put it in a dust_temperature.dat file.
-# - issue with the grid? r, theta, phi and not R(cylindrical radius), theta, phi -> issue with z in z_expansion? 
-# - check that all goes well without x-axisflip!
+# - check again that all goes well without x-axisflip!
 # =========================================
 
 
@@ -1017,6 +1012,17 @@ if sys.version_info[0] < 3:
 else:
     buf = subprocess.getoutput(command)
 alphaviscosity = float(buf.split()[1])
+# if alphaviscosity is null, then try to see if a constant
+# kinematic viscosity has been used in the simulation
+if alphaviscosity == 0:
+    command = 'awk " /^Viscosity/ " '+dir+'/*.par'
+    if sys.version_info[0] < 3:
+        buf = subprocess.check_output(command, shell=True)
+    else:
+        buf = subprocess.getoutput(command)
+    viscosity = float(buf.split()[1])
+    # simply set constant alpha value as nu / h^2 (ok at code's unit of length)
+    alphaviscosity = viscosity * (aspectratio**(-2.0))
 # get the grid radial spacing used in the numerical simulation
 command = 'awk " /^RadialSpacing/ " '+dir+'/*.par'
 if sys.version_info[0] < 3:
@@ -1138,7 +1144,7 @@ if (recalc_density == 'Yes' and polarized_scat == 'No'):
         print("Bin with index 0 changed to include arbitrarilly small dust tightly coupled to the gas")
         print("Mass fraction of bin 0 changed to: ",str(frac[0]))
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        imin = np.argmin(np.abs(gas.xmed-1.8))  # radial index corresponding to 0.4"
+        imin = np.argmin(np.abs(gas.xmed-1.4))  # radial index corresponding to 0.3"
         imax = np.argmin(np.abs(gas.xmed-2.8))  # radial index corresponding to 0.6"
         dustcube[0,imin:imax,:] = gas.data[imin:imax,:] * ratio * frac[0] * (gas.cumass*1e3)/((gas.culength*1e2)**2.)  # dimensions: nbin, nrad, nsec
         
@@ -1230,26 +1236,7 @@ if recalc_density == 'Yes':
             hd[ibin,:] = hgas * np.sqrt(10.0*alphaviscosity/(10.0*alphaviscosity+St))
         if z_expansion == 'G':
             hd[ibin,:] = hgas
-            '''
-            # truncation_radius is in arcseconds
-            rcut_in_code_units  = truncation_radius*distance*au/gas.culength/1e2
-            for i in range(nrad):
-                if (gas.xmed[i] <= rcut_in_code_units):
-                    hd[ibin,i] = hgas[i]
-                else:
-                    hd[ibin,i] = hgas[i] * ( (gas.xmed[i]/rcut_in_code_units)**(-2.0) )
-            '''
-            '''
-            rmask_in_code_units = mask_radius*distance*au/gas.culength/1e2
-            for i in range(nrad):
-                if (gas.xmed[i] < rmask_in_code_units):
-                    hd[ibin,i] = hgas[i] * ( (gas.xmed[i]/rmask_in_code_units)**(2.0) )
-                if (gas.xmed[i] > rcut_in_code_units):
-                    hd[ibin,i] = hgas[i] * ( (gas.xmed[i]/rcut_in_code_units)**(-2.0) )
-                if ( (gas.xmed[i] >= rmask_in_code_units) and (gas.xmed[i] <= rcut_in_code_units) ):
-                    hd[ibin,i] = hgas[i]
-            '''
-                                
+                                       
     # dust aspect ratio as function of ibin, r and phi (2D array for each size bin)
     hd2D = np.zeros((nbin,nrad,nsec))
     for th in range(nsec):
@@ -1318,7 +1305,7 @@ if recalc_opac == 'Yes':
     print('--------- computing dust opacities ----------')
 
     # Calculation of opacities uses the python scripts makedustopac.py and bhmie.py
-    # which were written by C. Dullemond, based on the original code by B. Draine.
+    # which were written by C. Dullemond, based on the original code by Bohren & Huffman.
     
     logawidth = 0.05          # Smear out the grain size by 5% in both directions
     na        = 20            # Use 10 grain size samples per bin size
@@ -1334,6 +1321,8 @@ if recalc_opac == 'Yes':
         graindens = 0.1 # g / cc
     if species == 'mix_2species':
         graindens = 1.7 # g / cc
+    if species == 'mix_2species_ice70':
+        graindens = 1.26 # g / cc
     if species == 'mix_2species_60silicates_40carbons':
         graindens = 2.7 # g / cc
     
@@ -1492,7 +1481,8 @@ if recalc_fluxmap == 'Yes':
         # check beam is correctly handled by inserting a source point at the
         # origin of the raw intensity image
         if check_beam == 'Yes':
-            raw_intensity[nx//2-1,ny//2-1] = 100.0*raw_intensity.max()
+            raw_intensity[:,:] = 0.0
+            raw_intensity[nx//2-1,ny//2-1] = 1.0
         # Add white (Gaussian) noise to raw flux image to simulate effects of 'thermal' noise
         if (add_noise == 'Yes' and plot_tau == 'No'):
             # beam area in pixel^2
@@ -1760,7 +1750,11 @@ if recalc_fluxmap == 'Yes':
 
     # Add + sign at the origin
     ax.plot(0.0,0.0,'+',color='white',markersize=10)
-
+    '''
+    if check_beam == 'Yes':
+        ax.contour(convolved_intensity,levels=[0.5*convolved_intensity.max()],color='black', linestyles='-',origin='lower',extent=[a0,a1,d0,d1])
+    '''
+    
     # plot beam
     if plot_tau == 'No':
         from matplotlib.patches import Ellipse
@@ -1769,7 +1763,17 @@ if recalc_fluxmap == 'Yes':
         e.set_facecolor('white')
         e.set_alpha(0.8)
         ax.add_artist(e)
-
+    # plot beam
+    '''
+    if check_beam == 'Yes':
+        from matplotlib.patches import Ellipse
+        e = Ellipse(xy=[0.0,0.0], width=bmin, height=bmaj, angle=bpaangle+90.0)
+        e.set_clip_box(ax.bbox)
+        e.set_facecolor('white')
+        e.set_alpha(1.0)
+        ax.add_artist(e)
+    '''
+        
     # plot color-bar
     from mpl_toolkits.axes_grid1 import make_axes_locatable
     divider = make_axes_locatable(ax)
