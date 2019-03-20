@@ -1,31 +1,39 @@
 ### Simulation parameters
-dir		out_newfluffy_HR2R	# local directory of fargo simulation
-on		3494			# fargo's output number
-xaxisflip	Yes			# flip x-axis in disc simulation plane?
+dir		out_newfluffy_HR2R	# name of fargo's simulation directory
+on		3494			# fargo's output number (will read dustsystaton.dat and gasdenson.dat files)
+
+
+### radmc3d parameters
+wavelength	0.87		# wavelength in millimeters
+scat_mode	2		# scattering mode max parameter (e.g., 0: absorption, 2: anisotropic scattering)
+nb_photons	1e9		# number of photos for raytracing
+nb_photons_scat	1e9		# number of photos for raytracing (scattering)
+nbpixels	2048		# number of pixels for flux maps
+secondorder	Yes		# second order ray tracing?
+nbcores		20		# how many cores do we use for radmc3D calculation?
 
 
 ### Dust size distribution
-wavelength	9.0		# wavelength in mm
 amin		1e-5    	# minimum particle size in meters
 amax		1e-2		# maximum particle size in meters
-pindex		3.0		# minus power law exponent of dust size distribution
-ratio		2e-2		# dust-to-gas mass ratio
+pindex		3.0		# minus the power law exponent of the dust's size distribution
 nbin		30		# number of size bins
+ratio		2e-2		# dust-to-gas mass ratio
 ncol		36		# number of cells in colatitude in radmc3d grid
-z_expansion	T		# type of vertical expansion for dust density (T, T2 or F)
+z_expansion	T		# type of vertical expansion for dust density (T or G, see manual)
 zmax_over_H	2.0		# maximum altitude of the 3D grid in pressure scale heights
 
 
 ### Dust opacities
-species		mix_2species_porous_ice70	# type of dust particles for opacity calculations
-precalc_opac	No			# do we use precalculated dust opacities?
+species		mix_2species_porous_ice70		# type of dust composition for opacity calculations
 opacity_dir	/home/cbaruteau/fargo/python/opac	# if so, name of directory with opacity files (a global extension is needed)
-plot_opac	No			# plot opacities vs. grain size?
+plot_opac	No					# plot opacities vs. grain size?
 
 
 ### Disc and star properties
 distance	160.0		# disc distance in parsecs
 inclination	21.0		# disc inclination in degrees
+xaxisflip	Yes		# flip x-axis in disc simulation plane (add 180 deg to inclination)?
 phiangle	-10.0		# disc phi angle in degrees
 posangle	62.0		# disc position angle in degrees (observed value)
 rstar		2.0		# star radius in solar radii
@@ -37,39 +45,34 @@ recalc_density	Yes		# do we recompute dust densities?
 bin_small_dust	No		# do we include a bin with small dust tightly coupled to the gas?
 recalc_opac	Yes		# do we recompute dust opacities?
 recalc_radmc	Yes		# do we run radmc3D (thermal Monte-Carlo + ray tracing)?
-plot_tau	No		# do we plot a raw map of optical depth or a convolved flux map?
 polarized_scat	No		# do we assume polarized scattering?
-nbcores		20		# how many cores do we use for radmc3D calculation?
 recalc_rawfits	No		# if radmc3d run elsewhere, do we compute fits file for raw flux?
-recalc_fluxmap	No		# do we compute convolved flux maps from raw flux maps?
+recalc_fluxmap	No		# do we compute convolved flux maps from raw flux maps (eg if we change the beam)?
 calc_abs_map	No		# do we compute 2D analytical solution witout scattering?
-dustdens_eq_gasdens	No	# do we assume dust surface density equal to gas surface density?
-Tdust_eq_Tgas	No		# do we take the hydro gas temperature for the dust temperature?
 deproj_polar	No		# do we compute a deprojected flux map in polar coordinates?
 add_noise	No		# do we add white noise to raw flux maps?
-noise_dev_std	2e-6		# if so, noise standard deviation in Jy per beam
-plot_temperature No		# do we plot radial profile of dust temperature?
+noise_dev_std	2e-5		# if so, noise standard deviation in Jy per beam
+plot_tau	No		# do we compute optical depth instead of continuum image?
+plot_temperature No		# do we plot dust's radial temperature profile?
 
 
-### radmc3d parameters
-nbpixels	2048		# number of pixels for flux maps
-scat_mode	2		# scattering mode max parameter (0: absorption, 2: anisotropic scattering)
-nb_photons	1e9		# number of photos for raytracing
-nb_photons_scat	1e9		# number of photos for raytracing (scattering)
-secondorder	Yes		# second order ray tracing
-
-
-### options with polarized scattering
-truncation_radius  0.38		# truncation radius in arcsecond beyond which dust scale height is reduced
+### options for polarized light images
+truncation_radius  0.38		# truncation radius in arcsecond beyond which dust density is reduced
 mask_radius	   0.15		# if non-zero, apply mask around star in Qphi PI image
 
 
 ### beam parameters
-bmaj		0.12		# beam major-axis in arcseconds
-bmin		0.10		# beam minor-axis in arcseconds
-bpaangle	65.0		# beam position angle in degrees (observed value)
+bmaj		0.052		# beam major-axis in arcseconds
+bmin		0.042		# beam minor-axis in arcseconds
+bpaangle	-7.1		# beam position angle in degrees (observed value)
 check_beam	No		# check beam is correct by adding source point at origin
 
 
 ### Map visualisation 
-minmaxaxis	0.75		# max of x and y in intesity images (in arcseconds)
+minmaxaxis	0.75		# max of x and y in intensity images (in arcseconds)
+
+
+### options for 2D analytical calculation of continuum emission w/o scattering
+Tdust_eq_Tgas	No		# do we take the hydro gas temperature for the dust temperature?
+dustdens_eq_gasdens	No	# do we assume dust surface density equal to gas surface density?
+precalc_opac	No		# do we use precalculated dust opacities?
