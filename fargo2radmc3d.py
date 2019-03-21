@@ -26,7 +26,6 @@
 #            TO DO LIST
 # =========================================
 # - check again that all goes well without x-axisflip!
-# - test
 # =========================================
 
 
@@ -1990,9 +1989,8 @@ if calc_abs_map == 'Yes':
         sizemin_file = 1e-6          # in meters, do not edit!
         sizemax_file = 1e-1          # in meters, do not edit!
         nbfiles = 50                 # do not edit
-        else:
-            sys.exit('I do not have pre-calculated opacity files for your type of species in the opacity_dir: I must exit!')
         size_file = sizemin_file * (sizemax_file/sizemin_file)**(np.arange(nbfiles)/(nbfiles-1.0))
+    
     # Loop over size bins
     for k in range(nbin):
         if precalc_opac == 'No':
