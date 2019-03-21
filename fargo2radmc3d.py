@@ -26,7 +26,6 @@
 #            TO DO LIST
 # =========================================
 # - check again that all goes well without x-axisflip!
-# - test
 # =========================================
 
 
