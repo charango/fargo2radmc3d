@@ -1537,9 +1537,7 @@ if (RTdust_or_gas == 'dust' and recalc_density == 'Yes' and polarized_scat == 'Y
     # Total dust surface density
     dust_surface_density = np.sum(dustcube,axis=0)
     print('Maximum dust surface density [in g/cm^2] is ', dust_surface_density.max())
-
-    stop
-
+    
 # =========================
 # 3. Compute dust mass volume density for each size bin
 #    (vertical expansion assuming hydrostatic equilibrium)
