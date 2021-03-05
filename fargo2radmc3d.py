@@ -1,21 +1,33 @@
 # =================================================================== 
 #                        FARGO2D to RADMC3D
-# code written by Clement Baruteau (CB), Sebastian Perez (SP), Marcelo Barraza (MB)
-# and Gaylor Wafflard-Fernandez (GWF), with substantial contributions from Simon Casassus (SC) 
+# code written by Clement Baruteau (CB), Sebastian Perez (SP) and Marcelo Barraza (MB)
+# with substantial contributions from Simon Casassus (SC) and Gaylor Wafflard-Fernandez (GWF)
 # =================================================================== 
 # 
 # present program can run with either Python 2.X or Python 3.X.
 #
-# Setup FARGO2D outputs for input into RADMC3D (v2.0 or 0.41, Dullemond et
+# Setup FARGO2D outputs for input into RADMC3D (v0.41, Dullemond et
 # al). Python based.
+# 
+# Considerations: 
+#    - Polar coordinate system based on input simulation grid.
+#      
+#        X == azimuthal angle
+#        Y == cylindrical radius
+# 
+#     Order in RADMC3D
+#        x y z = r (spherical) theta (colatitude) phi (azimuth)
+#     Order in FARGO2D
+#        x y = azimuth radius (cylindrical)
 # 
 # =================================================================== 
 
 # =========================================
 #            TO DO LIST
 # =========================================
-# - results from actual 3D simulations from Fargo3D
-# - perhaps split main file into several more readible files!...
+# - results from actual 3D simulations from Fargo3D (check fargo2python)
+# - check again that all goes well without x-axisflip!
+# - split main file into several more readible files...
 # =========================================
 
 
@@ -517,39 +529,40 @@ def exportfits(M):
     hdu.writeto(outfile, output_verify='fix', overwrite=True)
 
     # save entire intensity channels in another fits file
-    hdu2 = fits.PrimaryHDU()
-    hdu2.header['BITPIX'] = -32
-    hdu2.header['NAXIS'] = 3 # naxis
-    hdu2.header['NAXIS1'] = im_nx
-    hdu2.header['NAXIS2'] = im_ny
-    hdu2.header['NAXIS3'] = nlam
-    hdu2.header['EPOCH']  = 2000.0
-    hdu2.header['EQUINOX'] = 2000.0
-    hdu2.header['LONPOLE'] = 180.0
-    hdu2.header['CTYPE1'] = 'RA---SIN'
-    hdu2.header['CTYPE2'] = 'DEC--SIN'
-    hdu2.header['CTYPE3'] = 'VRAD'
-    hdu2.header['CRVAL1'] = float(0.0)
-    hdu2.header['CRVAL2'] = float(0.0)
-    hdu2.header['CRVAL3'] = float(-widthkms)
-    hdu2.header['CDELT1'] = float(-1.*pixsize_x_deg)
-    hdu2.header['CDELT2'] = float(pixsize_y_deg)
-    hdu2.header['CDELT3'] = float(dv)  # in km/s
-    hdu2.header['LBDAMIC'] = float(lbda0)
-    hdu2.header['CUNIT1'] = 'deg     '
-    hdu2.header['CUNIT2'] = 'deg     '
-    hdu2.header['CUNIT3'] = 'km/s     '
-    hdu2.header['CRPIX1'] = float((im_nx+1.)/2.)
-    hdu2.header['CRPIX2'] = float((im_ny+1.)/2.)
-    hdu2.header['CRPIX3'] = float(1.0)
-    hdu2.header['BUNIT'] = 'JY/beam'
-    hdu2.header['BTYPE'] = 'Intensity'
-    hdu2.header['BSCALE'] = float(1.0)
-    hdu2.header['BZERO'] = float(0.0)
-    del hdu2.header['EXTEND']
-    hdu2.data = intensity_in_each_channel.astype('float32')
-    hdu2.writeto(outfileall, output_verify='fix', overwrite=True)
-    # ----------
+    if polarized_scat == 'No' and nlam > 1:
+        hdu2 = fits.PrimaryHDU()
+        hdu2.header['BITPIX'] = -32
+        hdu2.header['NAXIS'] = 3 # naxis
+        hdu2.header['NAXIS1'] = im_nx
+        hdu2.header['NAXIS2'] = im_ny
+        hdu2.header['NAXIS3'] = nlam
+        hdu2.header['EPOCH']  = 2000.0
+        hdu2.header['EQUINOX'] = 2000.0
+        hdu2.header['LONPOLE'] = 180.0
+        hdu2.header['CTYPE1'] = 'RA---SIN'
+        hdu2.header['CTYPE2'] = 'DEC--SIN'
+        hdu2.header['CTYPE3'] = 'VRAD'
+        hdu2.header['CRVAL1'] = float(0.0)
+        hdu2.header['CRVAL2'] = float(0.0)
+        hdu2.header['CRVAL3'] = float(-widthkms)
+        hdu2.header['CDELT1'] = float(-1.*pixsize_x_deg)
+        hdu2.header['CDELT2'] = float(pixsize_y_deg)
+        hdu2.header['CDELT3'] = float(dv)  # in km/s
+        hdu2.header['LBDAMIC'] = float(lbda0)
+        hdu2.header['CUNIT1'] = 'deg     '
+        hdu2.header['CUNIT2'] = 'deg     '
+        hdu2.header['CUNIT3'] = 'km/s     '
+        hdu2.header['CRPIX1'] = float((im_nx+1.)/2.)
+        hdu2.header['CRPIX2'] = float((im_ny+1.)/2.)
+        hdu2.header['CRPIX3'] = float(1.0)
+        hdu2.header['BUNIT'] = 'JY/beam'
+        hdu2.header['BTYPE'] = 'Intensity'
+        hdu2.header['BSCALE'] = float(1.0)
+        hdu2.header['BZERO'] = float(0.0)
+        del hdu2.header['EXTEND']
+        hdu2.data = intensity_in_each_channel.astype('float32')
+        hdu2.writeto(outfileall, output_verify='fix', overwrite=True)
+        # ----------
     
     return outfile
 
@@ -885,6 +898,8 @@ def write_lines(specie,lines_mode):
             datafile = 'hco+@xpol'
         if gasspecies == 'so':
             datafile = 'so@lique'
+        if gasspecies == 'cs':
+            datafile = 'cs@lique'
         command = 'curl -O https://home.strw.leidenuniv.nl/~moldata/datafiles/'+datafile+'.dat'
         os.system(command)
         command = 'mv '+datafile+'.dat molecule_'+str(gasspecies)+'.inp'
@@ -1285,7 +1300,7 @@ else:
 flaringindex = float(buf.split()[1])
 # get the alpha viscosity used in the numerical simulation
 try:
-    command = 'awk " /^ALPHA/ " '+dir+'/*.par'
+    command = 'awk " /^AlphaViscosity/ " '+dir+'/*.par'
     if sys.version_info[0] < 3:
         buf = subprocess.check_output(command, shell=True)
     else:
@@ -1294,7 +1309,7 @@ try:
 # if no alphaviscosity, then try to see if a constant
 # kinematic viscosity has been used in the simulation
 except IndexError:
-    command = 'awk " /^Visc/ " '+dir+'/*.par'
+    command = 'awk " /^Viscosity/ " '+dir+'/*.par'
     if sys.version_info[0] < 3:
         buf = subprocess.check_output(command, shell=True)
     else:
@@ -1537,7 +1552,8 @@ if (RTdust_or_gas == 'dust' and recalc_density == 'Yes' and polarized_scat == 'Y
     # Total dust surface density
     dust_surface_density = np.sum(dustcube,axis=0)
     print('Maximum dust surface density [in g/cm^2] is ', dust_surface_density.max())
-    
+
+
 # =========================
 # 3. Compute dust mass volume density for each size bin
 #    (vertical expansion assuming hydrostatic equilibrium)
@@ -1726,6 +1742,18 @@ if RTdust_or_gas == 'gas' and recalc_density == 'Yes':
     print('--------- computing gas mass volume density ----------')
 
     gascube = gas.data*(gas.cumass*1e3)/((gas.culength*1e2)**2.)  # nrad, nsec, quantity is in g / cm^2
+
+    # Artificially make a cavity devoid of gas (test) 
+    if cavity_gas == 'Yes':
+        imin = np.argmin(np.abs(gas.rmed-0.9))
+        axi_cav_gas = 0.0
+        for j in range(nsec):
+            axi_cav_gas += gascube[imin,j]
+        axi_cav_gas /= nsec
+        for i in range(nrad):
+            if i < imin:
+                for j in range(nsec):
+                    gascube[i,j] = axi_cav_gas*(gas.rmed[i]/gas.rmed[imin])**(2.0)
 
     GASOUT = open('numberdens_%s.inp'%gasspecies,'w')
     GASOUT.write('1 \n')                           # iformat
