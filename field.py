@@ -92,4 +92,10 @@ class Field(Mesh):
         Reading the data
         """
         field = np.fromfile(f, dtype=dtype)
-        return field.reshape(self.nrad,self.nsec) # 2D
+        array = field.reshape(self.nrad,self.nsec) # 2D only!
+
+        # need to roll field by nsec/2 along azimuthal direction for FARGO3D runs!
+        if par.fargo3d == 'Yes':
+            array = np.roll(array, shift=int(self.nsec//2), axis=1)
+        
+        return array

@@ -25,6 +25,12 @@ def compute_gas_mass_volume_density():
             if i < imin:
                 for j in range(par.gas.nsec):
                     gascube[i,j] *= ((par.gas.rmed[i]/par.gas.rmed[imin])**(6.0))
+
+    # Make gas surface density axisymmetric (testing purposes)
+    if ('axisymgas' in open('params.dat').read()) and (par.axisymgas == 'Yes'):
+        axirhogas = np.sum(gascube,axis=1)/par.gas.nsec  # in code units
+        for i in range(par.gas.nrad):
+            gascube[i,:] = axirhogas[i]
                     
     GASOUT = open('numberdens_%s.inp'%par.gasspecies,'w')
     GASOUT.write('1 \n')                                  # iformat
@@ -147,46 +153,21 @@ def compute_gas_mass_volume_density():
         matplotlib.rc('font', family='Arial')
         fontcolor='white'
 
-        print('--------- plotting density(R,theta) ----------')
-
-        axidens   = np.zeros((par.gas.ncol,par.gas.nrad))
-        for j in range(par.gas.ncol):
-            for i in range(par.gas.nrad):
-                for k in range(par.gas.nsec):
-                    axidens[j,i]   += rhogascube[j,i,k]
-                axidens[j,i]   /= (par.gas.nsec+0.0)
-                
-        fig = plt.figure(figsize=(8.,8.))
-        plt.subplots_adjust(left=0.14, right=0.94, top=0.88, bottom=0.11)
-        ax = plt.gca()
-        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
-        ax.tick_params(axis='x', which='minor', top=True)
-        ax.tick_params(axis='y', which='minor', right=True)
+        # azimuthally-averaged number density:
+        axidens = np.sum(rhogascube,axis=2)/par.gas.nsec  # (nol,nrad)
 
         radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.tedge)
-        X = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
-        Y = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
-        ax.set_xlabel('Radius [au]')
-        ax.set_ylabel('Altitude [au]')
+        R = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
+        Z = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
 
-        ax.set_ylim(Y.min(),Y.max())
-        ax.set_xlim(X.min(),X.max())
-        
-        mynorm = matplotlib.colors.LogNorm()
-        vmin = axidens.min()
-        vmax = axidens.max()
+        # midplane number density:
+        midplane_dens = rhogascube[par.gas.ncol//2-1,:,:]  # (nrad,nsec)
 
-        CF = ax.pcolormesh(X,Y,axidens,cmap=par.mycolormap,vmin=vmin,vmax=vmax,norm=mynorm)
+        radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
+        X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
+        Y = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
 
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("top", size="2.5%", pad=0.12)
-        cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
-        cax.xaxis.tick_top()
-        cax.xaxis.set_tick_params(labelsize=20, direction='out')
-        cax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=10))
-
-        # title on top
-        cax.xaxis.set_label_position('top')
+        # common plot features
         if par.gasspecies == 'co':
             strgas = r'$^{12}$CO'
         elif par.gasspecies == '13co':
@@ -197,12 +178,74 @@ def compute_gas_mass_volume_density():
             strgas = r'C$^{18}$O'
         else:
             strgas = str(par.gasspecies).upper()  # capital letters
-            
+
+        
+        print('--------- a) plotting azimuthally-averaged number density (R,z) ----------')
+
+        fig = plt.figure(figsize=(8.,8.))
+        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+        ax = plt.gca()
+        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+        ax.tick_params(axis='x', which='minor', top=True)
+        ax.tick_params(axis='y', which='minor', right=True)
+
+        ax.set_xlabel('Radius [au]')
+        ax.set_ylabel('Altitude [au]')
+        ax.set_ylim(Z.min(),Z.max())
+        ax.set_xlim(R.min(),R.max())
+
+        mynorm = matplotlib.colors.LogNorm(vmin=axidens.min(),vmax=axidens.max())
+        CF = ax.pcolormesh(R,Z,axidens,cmap='nipy_spectral',norm=mynorm)
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("top", size="2.5%", pad=0.12)
+        cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+        cax.xaxis.tick_top()
+        cax.xaxis.set_tick_params(labelsize=20, direction='out')
+        cax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=10))
+
+        cax.xaxis.set_label_position('top')
         cax.set_xlabel(strgas+' number density '+r'[cm$^{-3}$]')
         cax.xaxis.labelpad = 8
         
-        fileout = 'number_density.pdf'
+        fileout = 'gas_number_density_Rz.pdf'
         plt.savefig('./'+fileout, dpi=160)
+
+
+        print('--------- b) plotting midplane number density (x,y) ----------')
+
+        fig = plt.figure(figsize=(8.,8.))
+        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+        ax = plt.gca()
+        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+        ax.tick_params(axis='x', which='minor', top=True)
+        ax.tick_params(axis='y', which='minor', right=True)
+
+        ax.set_xlabel('x [au]')
+        ax.set_ylabel('y [au]')
+        ax.set_ylim(Y.min(),Y.max())
+        ax.set_xlim(X.min(),X.max())
+
+        if midplane_dens.max()/midplane_dens.min() > 1e3:
+            mynorm = matplotlib.colors.LogNorm(vmin=1e-3*midplane_dens.max(),vmax=midplane_dens.max())
+        else:
+            mynorm = matplotlib.colors.LogNorm(vmin=midplane_dens.min(),vmax=midplane_dens.max())
+        midplane_dens = np.transpose(midplane_dens)
+        CF = ax.pcolormesh(X,Y,midplane_dens,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("top", size="2.5%", pad=0.12)
+        cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+        cax.xaxis.tick_top()
+        cax.xaxis.set_tick_params(labelsize=20, direction='out')
+
+        cax.xaxis.set_label_position('top')
+        cax.set_xlabel(strgas+' midplane number density '+r'[cm$^{-3}$]')
+        cax.xaxis.labelpad = 8
+        
+        fileout = 'gas_number_density_midplane.pdf'
+        plt.savefig('./'+fileout, dpi=160)
+        plt.close(fig)  # close figure as we reopen figure at every output number
 
         
     # print max of gas mass volume density at each colatitude

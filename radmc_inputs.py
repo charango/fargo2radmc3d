@@ -74,11 +74,11 @@ def write_AMRgrid(F, R_Scaling=1, Plot=False):
         grid.write(str(F.tedge[i])+'\t')
     grid.write('\n')
 
-    # azimuth 
+    # azimuth
     for i in range(F.nsec + 1):
-        grid.write(str(F.pedge[i])+'\t') 
+        grid.write(str(F.pedge[i])+'\t')
     grid.write('\n')
-
+    
     grid.close()
 
 

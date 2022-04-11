@@ -37,11 +37,13 @@ class Mesh():
         # -----
         # azimuth
         # -----
+        '''
         if par.fargo3d == 'No':
             domain_azi = np.loadtxt(directory+"used_azi.dat")  # azimuthal interfaces of grid cells
             self.pedge = np.append(domain_azi[:,1],domain_azi[-1:,2][0])
         else:
             self.pedge = np.linspace(0.,2.*np.pi,self.nsec+1)  # phi-edge
+        '''
         self.pedge = np.linspace(0.,2.*np.pi,self.nsec+1)  # phi-edge
         self.pmed = 0.5*(self.pedge[:-1] + self.pedge[1:])     # phi-center
 
@@ -49,7 +51,7 @@ class Mesh():
         # -----
         # colatitude
         # -----
-        if par.fargo3d == 'Yes':
+        if par.fargo3d == 'Yes' and par.hydro2D == 'No':
             try:
                 domain_col = np.loadtxt(directory+"domain_z.dat")  # radial interfaces of grid cells
             except IOError:

@@ -2,43 +2,42 @@
 ### Simulation parameters ###
 #############################
 
-dir		out_newfluffy_HR2R		# local directory of fargo simulation
-on		3494		# fargo's output number
-override_units	No		# do we change code units? If so, the two lines below must be specified
-new_unit_length	4.5e12		# new unit of length in meters
+dir		out1		# local directory of fargo simulation
+on		44		# fargo's output number
+override_units	Yes		# do we change code units? If so, the two lines below must be specified
+new_unit_length	1.5e13		# new unit of length in meters
 new_unit_mass	4e30		# new unit of mass in kg
-mycolormap	nipy_spectral	# nipy_spectral, inferno, magma...
 
 
 ###############
 ### Roadmap ###
 ###############
 
-verbose		No		# verbose mode (if Yes, many prints on the screen)
+verbose		Yes		# verbose mode (if Yes, many prints on the screen)
 RTdust_or_gas	dust		# radiative transfer in the dust or the gas? (dust or gas)
 
-Tdust_eq_Thydro	No		# do we take the hydro gas temperature for the dust temperature? (if No, mctherm is run)
+Tdust_eq_Thydro	Yes		# do we take the hydro gas temperature for the dust temperature? (if No, mctherm is run)
 recalc_radmc	No		# do we run radmc3D (thermal Monte-Carlo + ray tracing)?
-recalc_rawfits	No		# if radmc3d run elsewhere, do we compute fits file for raw flux?
-recalc_fluxmap	Yes		# do we compute convolved flux maps from raw flux maps?
+recalc_rawfits	Yes		# if radmc3d run elsewhere, do we compute fits file for raw flux?
+recalc_fluxmap	No		# do we compute convolved flux maps from raw flux maps?
 plot_tau	No		# do we plot absorption optical depth?
 calc_abs_map	No		# do we compute 2D analytical solution witout scattering?
 
 
 ### noise
-add_noise	No		# do we add white noise to raw flux maps?
-noise_dev_std	1e-3		# if so, noise standard deviation in Jy per beam
+add_noise	Yes		# do we add white noise to raw flux maps?
+noise_dev_std	3e-5		# if so, noise standard deviation in Jy per beam
 
 
 ### optional display
 deproj_polar	Yes		# do we compute a deprojected flux map in polar coordinates?
-axi_intensity	No		# do we plot axisymmetric, deprojected intensity profile?
+axi_intensity	Yes		# do we plot axisymmetric, deprojected intensity profile?
 brightness_temp	No		# do we display intensity in brighness temperature?
 
 
 ### Grid vertical extent
-ncol		30		# number of cells in colatitude in radmc3d grid
-zmax_over_H	5.0		# maximum altitude of the 3D grid in pressure scale heights
+ncol		40		# number of cells in colatitude in radmc3d grid
+zmax_over_H	3.0		# maximum altitude of the 3D grid in pressure scale heights
 
 
 ### radmc3d parameters
@@ -50,39 +49,40 @@ secondorder	Yes		# second order ray tracing
 ### dust RT calculations ###
 ############################
 
-recalc_dust_density	No	# do we recompute dust densities?
-recalc_dust_temperature	No	# do we recompute dust temperatures?
-plot_dust_temperature	No	# do we plot dust temperature?
-recalc_opac		No	# do we recompute dust opacities?
-polarized_scat		Yes	# do we assume polarized scattering?
-nbcores			4	# how many cores do we use for radmc3D calculation?
-scat_mode		5	# scattering mode max parameter (0: absorption, 2: anisotropic scattering)
-nb_photons		1e7	# number of photos for raytracing
-nb_photons_scat		1e7	# number of photos for raytracing (scattering)
+recalc_dust_density	No	  # do we recompute dust densities?
+recalc_dust_temperature	No	  # do we recompute dust temperatures?
+plot_dust_quantities	No	  # if yes, plot for smallest and largest bin: midplane dust density, phi-averaged density vs. R and Z + same for T + opacities
+recalc_opac		No	  # do we recompute dust opacities?
+polarized_scat		No	  # do we assume polarized scattering?
+wavelength		1.25	  # wavelength in mm
+nbcores			4	  # how many cores do we use for radmc3D calculation?
+scat_mode		2	  # scattering mode max parameter (0: absorption, 2: anisotropic scattering)
+nb_photons		1e8	  # number of photos for raytracing
+nb_photons_scat		1e8	  # number of photos for raytracing (scattering)
 
 
 ### Dust size distribution
-wavelength	1.04e-3		# wavelength in mm
-amin		1e-8    	# minimum particle size in meters
-amax		3e-7		# maximum particle size in meters
+dustfluids      1,5		# if !No, range of indices of dust fluids for FARGO3D multifluid simulations
+amin		3e-5    	# minimum particle size in meters
+amax		3e-3		# maximum particle size in meters
 pindex		3.5		# minus power law exponent of dust size distribution
-ratio		2e-3		# dust-to-gas mass ratio
-nbin		12		# number of size bins
-z_expansion	G		# type of vertical expansion for dust density (T, T2 or F, only relevant for dust)
+ratio		1e-2		# dust-to-gas mass ratio
+nbin		5		# number of size bins
+z_expansion	T		# type of vertical expansion for dust density (T, T2 or F, only relevant for dust)
 
 
 ### Dust opacities
-species		mix_2species_60silicates_40carbons	# type of dust particles for opacity calculations (eg, mix_2species_ice70, mix_2species_60silicates_40carbons...)
+species		mix_2species_ice70	# type of dust particles for opacity calculations (eg, mix_2species_ice70, mix_2species_60silicates_40carbons...)
 precalc_opac	No					# do we use precalculated dust opacities?
-opacity_dir	/Users/clement/fargo/python/opac	# if so, name of directory with opacity files (a global extension is needed)
-plot_opac	No					# plot opacities vs. grain size?
+opacity_dir	opac	# if so, name of directory with opacity files (a global extension is needed)
 
 
 ### options with polarized scattering
-truncation_radius  0.35		# truncation radius in arcsecond beyond which dust scale height is reduced
-mask_radius	   0.15		# if non-zero, apply mask around star in Qphi PI image
+cavity_pol_int     No           # cavity profile for the gas density? (WEJ project)
+truncation_radius  0.0		# truncation radius in arcsecond beyond which dust scale height is reduced
+mask_radius	   0.0		# if non-zero, apply mask around star in Qphi PI image
 polarized_scat_field	Qphi	# either 'Qphi', 'I' (=Stokes I), or 'PI' (=sqrt(Q^2+U^2))
-r2_rescale		Yes	# do we rescale polarized_scat_field by deprojected radiale distance squared?
+r2_rescale		No	# do we rescale polarized_scat_field by deprojected radiale distance squared?
 
 
 ###########################
@@ -90,17 +90,17 @@ r2_rescale		Yes	# do we rescale polarized_scat_field by deprojected radiale dist
 ###########################
 
 recalc_gas_quantities	No	# do we recompute all gas quantities on the RADMC3D spherical grid?
-plot_gas_quantities	No	# plot azimuthally-averaged density and temperature vs. radius and colatitude?
+plot_gas_quantities	No	# if yes, plot midplane number density, surface T, midplane vr and vphi, phi-averaged number density and T vs. R and z
 
 lines_mode	1		# 1: LTE mode, 2: User-defined populations, 3: Large Velocity Gradient (Sobolev) populations, 
 				# 4: Optically thin non-LTE level populations method (for now just 1)
-gasspecies	co		# what gas species do we consider (e.g.: co, 13co, c17o, c18o)
+gasspecies	c18o		# what gas species do we consider (e.g.: co, 13co, c17o, c18o)
 iline		3		# the ith line in the rotational ladder (eg, 3 means 3-2)
-abundance	1e-4		# abundance (species/H2): 1e-4 for 12co, 2e-6 for 13co, 2e-8 for c18o, 1e-10 for hco+
+abundance	2e-7		# abundance (species/H2): 1e-4 for 12co, 2e-6 for 13co, 2e-8 for c18o, 1e-10 for hco+
 vkms		0.0		# velocity shift wrt systemic velocity (km/s)?
-widthkms	6.0		# velocity width around systemic velocity (km/s)?
+widthkms	10.0		# velocity width around systemic velocity (km/s)?
 moment_order	0		# order of moment map for gas emission (basically, 0 or 1)
-linenlam	41		# number of wavelengths for multi-color gas images (eg, for moment 0 or 1 maps)
+linenlam	81		# number of wavelengths for multi-color gas images (eg, for moment 0 or 1 maps)
 turbvel		0.0		# turbulent velocity (m/s)
 
 photodissociation  Yes		# simple model for CO photodissociation
@@ -113,22 +113,22 @@ intensity_inJyperpixel_inrawdatacube	 No    # if Yes: gas datacube in Jy/pixel (
 ### Disc and star properties
 ############################
 
-distance	160.0		# disc distance in parsecs
-inclination	21.0		# disc inclination in degrees
+distance	101.0		# disc distance in parsecs
+inclination	46.7		# disc inclination in degrees
 xaxisflip    	Yes		# implies that effective inclination += 180 deg
-phiangle	-10.0		# disc phi angle in degrees
-posangle	62.0		# disc position angle in degrees (observed value)
-rstar		2.0		# star radius in solar radii
-teff		7340.0		# star effective temperature
+phiangle	0.0		# disc phi angle in degrees
+posangle	133.3		# disc position angle in degrees (observed value)
+rstar		1.2		# star radius in solar radii
+teff		6000.0		# star effective temperature
 
 
 ###################
 ### beam parameters
 ###################
 
-bmaj		0.026 # 0.53 #0.46		# beam major-axis in arcseconds
-bmin		0.026 # 0.35 #0.30		# beam minor-axis in arcseconds
-bpaangle	0.0 # 37.7 #35.0		# beam position angle in degrees (observed value)
+bmaj		0.061 # 0.048 # 0.53 #0.46		# beam major-axis in arcseconds
+bmin		0.047 # 0.038 # 0.35 #0.30		# beam minor-axis in arcseconds
+bpaangle	76.4  # 90.0 # 37.7 #35.0		# beam position angle in degrees (observed value)
 check_beam	No		# check beam is correct by adding source point at origin
 
 
@@ -136,4 +136,8 @@ check_beam	No		# check beam is correct by adding source point at origin
 ### Map visualisation
 #####################
 
-minmaxaxis	0.62		# max of x and y in intesity images (in arcseconds)
+minmaxaxis	1.2		# max of x and y in intesity images (in arcseconds)
+mycolormap	magma		# nipy_spectral, inferno, magma...
+log_colorscale	Yes		# display final image with log colorscale or not
+max_colorscale	6.0		# max color scale in mJy/beam or in micronJy/beam
+min_colorscale	0.1	# min color scale in mJy/beam or in micronJy/beam

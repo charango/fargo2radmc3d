@@ -6,6 +6,9 @@ import numpy as np
 from mesh import *
 from field import *
 
+import matplotlib
+import matplotlib.pyplot as plt
+
 # =========================
 # Microturbulent line broadening
 # =========================
@@ -45,12 +48,13 @@ def write_gas_microturb():
 # Compute gas velocity field on RADMC 3D grid
 # =========================
 def compute_gas_velocity():
-    
-    if par.fargo3d == 'Yes':
+
+    # 3D simulation carried out with Fargo 3D (spherical coordinates already)
+    if par.fargo3d == 'Yes' and par.hydro2D == 'No':
 
         vtheta3D  = Field(field='gasvz'+str(par.on)+'.dat', directory=par.dir).data  # code units
         vtheta3D *= (par.gas.culength*1e2)/(par.gas.cutime) #cm/s
-
+        
         vrad3D    = Field(field='gasvy'+str(par.on)+'.dat', directory=par.dir).data  # code units
         vrad3D   *= (par.gas.culength*1e2)/(par.gas.cutime) #cm/s
 
@@ -63,27 +67,41 @@ def compute_gas_velocity():
             for phi in range(par.gas.nsec):
                 vphi3D[theta,:,phi] += par.gas.rmed*omegaframe
         vphi3D   *= (par.gas.culength*1e2)/(par.gas.cutime) #cm/s
-        
-    else:
 
+    else:
         # arrays allocation
         vrad3D_cyl   = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))   # zeros!
         vphi3D_cyl   = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))   # zeros!
         vtheta3D     = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))   # zeros!
         vrad3D       = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))   # zeros!
         vphi3D       = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))   # zeros!
-        
-        vrad2D   = Field(field='gasvrad'+str(par.on)+'.dat', directory=par.dir).data  # code units
+
+        if par.fargo3d == 'No':
+            vrad2D   = Field(field='gasvrad'+str(par.on)+'.dat', directory=par.dir).data  # code units
+            vphi2D   = Field(field='gasvtheta'+str(par.on)+'.dat', directory=par.dir).data  # code units
+            f1, xpla, ypla, f4, f5, f6, f7, date, omega, f10, f11 = np.loadtxt(par.dir+"/planet0.dat",unpack=True)
+        else:
+            vrad2D    = Field(field='gasvy'+str(par.on)+'.dat', directory=par.dir).data  # code units
+            vphi2D    = Field(field='gasvx'+str(par.on)+'.dat', directory=par.dir).data  # code units
+            f1, xpla, ypla, f4, f5, f6, f7, f8, date, omega = np.loadtxt(par.dir+"/planet0.dat",unpack=True)
+            
         vrad2D   *= (par.gas.culength*1e2)/(par.gas.cutime) #cm/s
 
-        vphi2D   = Field(field='gasvtheta'+str(par.on)+'.dat', directory=par.dir).data  # code units
-        f1, xpla, ypla, f4, f5, f6, f7, date, omega, f10, f11 = np.loadtxt(par.dir+"/planet0.dat",unpack=True)
         omegaframe = omega[par.on]
-
+        print('omegaframe = ', omegaframe)
+        
         for phi in range(par.gas.nsec):
             vphi2D[:,phi] += par.gas.rmed*omegaframe
         vphi2D   *= (par.gas.culength*1e2)/(par.gas.cutime) #cm/s
 
+        # Make gas velocity axisymmetric (testing purposes)
+        if ('axisymgas' in open('params.dat').read()) and (par.axisymgas == 'Yes'):
+            axivrad2D = np.sum(vrad2D,axis=1)/par.gas.nsec
+            axivphi2D = np.sum(vphi2D,axis=1)/par.gas.nsec  
+            for i in range(par.gas.nrad):
+                vrad2D[i,:] = axivrad2D[i]
+                vphi2D[i,:] = axivphi2D[i]
+            
         # Vertical expansion for vrad and vphi (vtheta being assumed zero)
         for z in range(par.gas.nver):
             vrad3D_cyl[z,:,:] = vrad2D
@@ -118,5 +136,107 @@ def compute_gas_velocity():
             for i in range(par.gas.nrad):
                 GASVEL.write(str(vrad3D[j,i,k])+' '+str(vtheta3D[j,i,k])+' '+str(vphi3D[j,i,k])+' \n')
     GASVEL.close()
-    
+
+
+    # finally output plots of the gas temperature
+    if par.plot_gas_quantities == 'Yes':
+        
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+        import matplotlib.ticker as ticker
+        from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
+        
+        matplotlib.rcParams.update({'font.size': 20})
+        matplotlib.rc('font', family='Arial')
+        fontcolor='white'
+
+        # midplane radial velocity:
+        vrmid = vrad3D[par.gas.ncol//2-1,:,:] # nrad, nsec
+        vrmid /= 1e5 # in km/s
+
+        # midplane azimuthal velocity:
+        vtmid = vphi3D[par.gas.ncol//2-1,:,:] # nrad, nsec
+        vtmid /= 1e5 # in km/s
+            
+        radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
+        X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
+        Y = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
+        
+        # common plot features
+        if par.gasspecies == 'co':
+            strgas = r'$^{12}$CO'
+        elif par.gasspecies == '13co':
+            strgas = r'$^{13}$CO'
+        elif par.gasspecies == 'c17o':
+            strgas = r'C$^{17}$O'
+        elif par.gasspecies == 'c18o':
+            strgas = r'C$^{18}$O'
+        else:
+            strgas = str(par.gasspecies).upper()  # capital letters
+            
+        print('--------- a) plotting midplane radial velocity (x,y) ----------')
+
+        fig = plt.figure(figsize=(8.,8.))
+        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+        ax = plt.gca()
+        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+        ax.tick_params(axis='x', which='minor', top=True)
+        ax.tick_params(axis='y', which='minor', right=True)
+        
+        ax.set_xlabel('x [au]')
+        ax.set_ylabel('y [au]')
+        ax.set_ylim(Y.min(),Y.max())
+        ax.set_xlim(X.min(),X.max())
+            
+        mynorm = matplotlib.colors.Normalize(vmin=vrmid.min(),vmax=vrmid.max())
+        vrmid = np.transpose(vrmid)
+        CF = ax.pcolormesh(X,Y,vrmid,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("top", size="2.5%", pad=0.12)
+        cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+        cax.xaxis.tick_top()
+        cax.xaxis.set_tick_params(labelsize=20, direction='out')
+
+        cax.xaxis.set_label_position('top')
+        cax.set_xlabel(strgas+' midplane radial velocity '+r'[km s$^{-1}$]')
+        cax.xaxis.labelpad = 8
+        
+        fileout = 'vrad_midplane.pdf'
+        plt.savefig('./'+fileout, dpi=160)
+        plt.close(fig)  # close figure as we reopen figure at every output number
+
+
+        print('--------- b) plotting midplane azimuthal velocity (x,y) ----------')
+
+        fig = plt.figure(figsize=(8.,8.))
+        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+        ax = plt.gca()
+        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+        ax.tick_params(axis='x', which='minor', top=True)
+        ax.tick_params(axis='y', which='minor', right=True)
+        
+        ax.set_xlabel('x [au]')
+        ax.set_ylabel('y [au]')
+        ax.set_ylim(Y.min(),Y.max())
+        ax.set_xlim(X.min(),X.max())
+            
+        mynorm = matplotlib.colors.Normalize(vmin=vtmid.min(),vmax=vtmid.max())
+        vtmid = np.transpose(vtmid)
+        CF = ax.pcolormesh(X,Y,vtmid,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("top", size="2.5%", pad=0.12)
+        cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+        cax.xaxis.tick_top()
+        cax.xaxis.set_tick_params(labelsize=20, direction='out')
+
+        cax.xaxis.set_label_position('top')
+        cax.set_xlabel(strgas+' midplane azimuthal velocity '+r'[km s$^{-1}$]')
+        cax.xaxis.labelpad = 8
+        
+        fileout = 'vphi_midplane.pdf'
+        plt.savefig('./'+fileout, dpi=160)
+        plt.close(fig)  # close figure as we reopen figure at every output number
+
+        
     del vrad3D, vphi3D, vtheta3D, vrad3D_cyl, vphi3D_cyl

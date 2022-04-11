@@ -1,6 +1,8 @@
 # import global variables
 import par
 
+import matplotlib
+import matplotlib.pyplot as plt
 import os
 
 from makedustopac import *
@@ -41,7 +43,10 @@ def compute_dust_opacities():
         if par.fargo3d == 'No':
             agraincm = 10.0**(0.5*(np.log10(1e2*par.bins[ibin]) + np.log10(1e2*par.bins[ibin+1])))
         else:
-            agraincm = 1e2*par.dust_size[ibin]
+            if par.dustfluids != 'No':
+                agraincm = 1e2*par.dust_size[par.dustfluids[0]-1+ibin]
+            else:
+                agraincm = 1e2*par.bins[ibin]
         print('====================')
         print('bin ', ibin+1,'/',par.nbin)
         print('grain size [cm]: ', agraincm, ' with grain density [g/cc] = ', graindens)
@@ -124,6 +129,13 @@ def read_opacities(filein):
 # plotting opacities
 # -------------------
 def plot_opacities(species='mix_2species_porous',amin=0.1,amax=1000,nbin=10,lbda1=1e-3):
+
+    fig = plt.figure(figsize=(8.,8.))
+    plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+    ax = plt.gca()
+    ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+    ax.tick_params(axis='x', which='minor', top=True)
+    ax.tick_params(axis='y', which='minor', right=True)
     ax = plt.gca()
     ax.tick_params(axis='both',length = 10, width=1)
 
@@ -135,7 +147,7 @@ def plot_opacities(species='mix_2species_porous',amin=0.1,amax=1000,nbin=10,lbda
     sizes = np.logspace(np.log10(amin), np.log10(amax), nbin)
 
     for k in range(nbin):
-        if polarized_scat == 'No':
+        if par.polarized_scat == 'No':
             filein = 'dustkappa_'+species+str(k)+'.inp'
         else:
             filein = 'dustkapscatmat_'+species+str(k)+'.inp'

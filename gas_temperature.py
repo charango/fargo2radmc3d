@@ -105,7 +105,7 @@ def compute_gas_temperature():
         TEMPOUT.close()
         
         # finally output plots of the gas temperature
-        if par.plot_gas_quantities == 'Yes':
+        if par.plot_gas_quantities == 'Yes' or par.plot_dust_quantities == 'Yes':
         
             from mpl_toolkits.axes_grid1 import make_axes_locatable
             import matplotlib.ticker as ticker
@@ -126,8 +126,8 @@ def compute_gas_temperature():
             surftemp = gas_temp[par.gas.ncol-1,:,:]
             
             radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
-            X = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
-            Y = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
+            X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
+            Y = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
 
             # common plot features
             if par.gasspecies == 'co':
@@ -145,7 +145,7 @@ def compute_gas_temperature():
             print('--------- a) plotting azimuthally-averaged gas temperature (R,z) ----------')
 
             fig = plt.figure(figsize=(8.,8.))
-            plt.subplots_adjust(left=0.14, right=0.94, top=0.88, bottom=0.11)
+            plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
             ax = plt.gca()
             ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
             ax.tick_params(axis='x', which='minor', top=True)
@@ -155,9 +155,13 @@ def compute_gas_temperature():
             ax.set_ylabel('Altitude [au]')
             ax.set_ylim(Z.min(),Z.max())
             ax.set_xlim(R.min(),R.max())
+
             
             mynorm = matplotlib.colors.Normalize(vmin=axitemp.min(),vmax=axitemp.max())
-            CF = ax.pcolormesh(R,Z,axitemp,cmap=par.mycolormap,norm=mynorm,rasterized=True)
+            if axitemp.max() / axitemp.min() > 10:
+                mynorm = matplotlib.colors.LogNorm(vmin=axitemp.min(),vmax=axitemp.max())
+
+            CF = ax.pcolormesh(R,Z,axitemp,cmap='nipy_spectral',norm=mynorm,rasterized=True)
 
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("top", size="2.5%", pad=0.12)
@@ -166,10 +170,14 @@ def compute_gas_temperature():
             cax.xaxis.set_tick_params(labelsize=20, direction='out')
 
             cax.xaxis.set_label_position('top')
-            cax.set_xlabel(strgas+' temperature '+r'[K]')
+            if par.RTdust_or_gas == 'gas':
+                cax.set_xlabel(strgas+' temperature '+r'[K]')
+                fileout = 'gas_temperature_Rz.pdf'
+            if par.RTdust_or_gas == 'dust':
+                cax.set_xlabel('dust temperature '+r'[K]')
+                fileout = 'dust_temperature_Rz.pdf'
             cax.xaxis.labelpad = 8
-        
-            fileout = 'gasRZ_temperature.pdf'
+            
             plt.savefig('./'+fileout, dpi=160)
             plt.close(fig)  # close figure as we reopen figure at every output number
             
@@ -177,7 +185,7 @@ def compute_gas_temperature():
             print('--------- b) plotting surface gas temperature (x,y) ----------')
 
             fig = plt.figure(figsize=(8.,8.))
-            plt.subplots_adjust(left=0.14, right=0.94, top=0.88, bottom=0.11)
+            plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
             ax = plt.gca()
             ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
             ax.tick_params(axis='x', which='minor', top=True)
@@ -189,8 +197,11 @@ def compute_gas_temperature():
             ax.set_xlim(X.min(),X.max())
             
             mynorm = matplotlib.colors.Normalize(vmin=surftemp.min(),vmax=surftemp.max())
+            if surftemp.max() / surftemp.min() > 10:
+                mynorm = matplotlib.colors.LogNorm(vmin=surftemp.min(),vmax=surftemp.max())
+            
             surftemp = np.transpose(surftemp)
-            CF = ax.pcolormesh(X,Y,surftemp,cmap=par.mycolormap,norm=mynorm,rasterized=True)
+            CF = ax.pcolormesh(X,Y,surftemp,cmap='nipy_spectral',norm=mynorm,rasterized=True)
 
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("top", size="2.5%", pad=0.12)
@@ -199,12 +210,15 @@ def compute_gas_temperature():
             cax.xaxis.set_tick_params(labelsize=20, direction='out')
 
             cax.xaxis.set_label_position('top')
-            cax.set_xlabel(strgas+' temperature '+r'[K]')
+            if par.RTdust_or_gas == 'gas':
+                cax.set_xlabel(strgas+' surface temperature '+r'[K]')
+                fileout = 'gas_temperature_surface.pdf'
+            if par.RTdust_or_gas == 'dust':
+                cax.set_xlabel('dust surface temperature '+r'[K]')
+                fileout = 'dust_temperature_surface.pdf'                
             cax.xaxis.labelpad = 8
-        
-            fileout = 'gas_surface_temperature.pdf'
+            
             plt.savefig('./'+fileout, dpi=160)
             plt.close(fig)  # close figure as we reopen figure at every output number
             
-
         del gas_temp  

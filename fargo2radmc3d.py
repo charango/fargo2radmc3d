@@ -17,6 +17,7 @@
 # - results from actual 3D simulations from Fargo3D (check
 # fargo2python): check latitude expression in mesh.py
 # - work out case where RTdust_or_gas = 'both'
+# - overplot planet position in synthetic maps
 # - check again that all goes well without x-axisflip!
 # =================================
 
@@ -57,14 +58,14 @@ if par.RTdust_or_gas == 'dust':
         print('--------- Setting dust temperature to gas hydro temperature ----------')
         compute_gas_temperature()
 
-    if par.Tdust_eq_Thydro == 'No' and par.plot_dust_temperature == 'Yes':
+    if par.Tdust_eq_Thydro == 'No' and par.plot_dust_quantities == 'Yes':
         from dust_temperature import *
         print('--------- Plotting dust temperature ----------')
         plot_dust_temperature()
         
     # Write dustopac.inp file even if we don't (re)calculate dust opacities
     write_dustopac(par.species,par.nbin)
-    if par.plot_opac == 'Yes':
+    if par.plot_dust_quantities == 'Yes':
         print('--------- Plotting dust opacities ----------')
         plot_opacities(species=par.species,amin=par.amin,amax=par.amax,nbin=par.nbin,lbda1=par.wavelength*1e3)
 
@@ -103,7 +104,7 @@ if par.RTdust_or_gas == 'gas':
 from radmc_inputs import *
 write_radmc3d_script()
 
-if (par.recalc_radmc == 'Yes'):
+if par.recalc_radmc == 'Yes':
     
     # Write other parameter files required by RADMC3D
     print('--------- Printing auxiliary files ----------')

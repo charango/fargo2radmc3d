@@ -10,6 +10,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 from astropy.io import fits
 
+import matplotlib.ticker as ticker
+from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
+
 from beam import *
 from polar import *
 
@@ -27,7 +30,10 @@ def produce_final_image():
         outfile += '_mask'+str(par.mask_radius)
         outfile += '_'+str(par.polarized_scat_field)
         outfile += '_r2'+str(par.r2_rescale)
-    
+
+    if par.log_colorscale == 'Yes':
+        outfile += '_logYes'
+        
     # add bmaj information
     outfile = outfile + '_bmaj'+str(par.bmaj) + '_bmin'+str(par.bmin)
     outfile = outfile+'.fits'
@@ -136,7 +142,7 @@ def produce_final_image():
         # Call to Gauss_filter function
         if par.moment_order != 1:
             smooth = Gauss_filter(raw_intensity, stdev_x, stdev_y, par.bpaangle, Plot=False)
-        else:
+        if par.RTdust_or_gas == 'gas' and par.moment_order == 1:
             smooth = raw_intensity
 
         # convert image from Jy/pixel to mJy/beam or microJy/beam
@@ -184,14 +190,16 @@ def produce_final_image():
             # Gas RT and mooment order 0 map
             if par.RTdust_or_gas == 'gas' and par.moment_order == 0 and par.widthkms != 0.0:
                 strflux = strgas+' integrated intensity [mJy/beam km/s]'
-            if convolved_intensity.max() < 1.0:
-                convolved_intensity = smooth * 1e6 * beam   # microJy/beam
-                strflux = r'Flux of continuum emission [$\mu$Jy/beam]'
-                # Gas RT and a single velocity channel
-                if par.RTdust_or_gas == 'gas' and par.widthkms == 0.0:
-                    strflux = strgas+' intensity [$\mu$Jy/beam]'
-                if par.RTdust_or_gas == 'gas' and par.moment_order == 0 and par.widthkms != 0.0:
-                    strflux = strgas+' integrated intensity [$\mu$Jy/beam km/s]'
+            if convolved_intensity.max() < 1.0 and ('max_colorscale' in open('params.dat').read()):
+                if not(par.max_colorscale == '#'):
+                    if not(par.max_colorscale > 1.0):
+                        convolved_intensity = smooth * 1e6 * beam   # microJy/beam
+                        strflux = r'Flux of continuum emission [$\mu$Jy/beam]'
+                        # Gas RT and a single velocity channel
+                        if par.RTdust_or_gas == 'gas' and par.widthkms == 0.0:
+                            strflux = strgas+' intensity [$\mu$Jy/beam]'
+                        if par.RTdust_or_gas == 'gas' and par.moment_order == 0 and par.widthkms != 0.0:
+                            strflux = strgas+' integrated intensity [$\mu$Jy/beam km/s]'
 
         #
         if par.RTdust_or_gas == 'gas' and par.moment_order == 1:
@@ -341,7 +349,9 @@ def produce_final_image():
     # plotting image panel
     # --------------------
     matplotlib.rcParams.update({'font.size': 20})
-    matplotlib.rc('font', family='Arial') 
+    #matplotlib.rc('font', family='Helvetica')
+    plt.rcParams['font.family'] = 'DeJavu Serif'
+    plt.rcParams['font.serif'] = ['Helvetica']
     fontcolor='white'
 
     # name of pdf file for final image
@@ -385,14 +395,34 @@ def produce_final_image():
     ax.set_xlabel('RA offset [arcsec]')
     ax.set_ylabel('Dec offset [arcsec]')
 
+    # Normalization: linear or logarithmic scale
+    if par.min_colorscale == '#':
+        min = convolved_intensity.min()
+        if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
+            min = 0.0
+    else:
+        min = par.min_colorscale
+    if par.max_colorscale == '#':
+        max = convolved_intensity.max()
+        if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
+            max = 1.0
+    else:
+        max = par.max_colorscale
+    if par.log_colorscale == 'Yes':
+        if par.min_colorscale == '#':
+            min = 1e-2*max
+        else:
+            min = par.min_colorscale
+        # avoid negative values of array
+        convolved_intensity[convolved_intensity <= min] = min
+    
+    if par.log_colorscale == 'Yes':
+        mynorm = matplotlib.colors.LogNorm(vmin=min,vmax=max)
+    else:
+        mynorm = matplotlib.colors.Normalize(vmin=min,vmax=max)
+
     # imshow does a bilinear interpolation. You can switch it off by putting
     # interpolation='none'
-    min = convolved_intensity.min()
-    max = convolved_intensity.max()
-    if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
-        min = 0.0
-        max = 1.0
-    mynorm = matplotlib.colors.Normalize(vmin=min,vmax=max)
     CM = ax.imshow(convolved_intensity, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[a0,a1,d0,d1], norm=mynorm, aspect='auto')
     
     # Add wavelength in top-left corner
@@ -439,6 +469,9 @@ def produce_final_image():
     cax.xaxis.tick_top()
     cax.xaxis.set_tick_params(labelsize=20, direction='out')
     cax.xaxis.set_major_locator(plt.MaxNLocator(6))
+    if par.log_colorscale == 'Yes':
+        cax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=10))
+    
     # title on top
     cax.xaxis.set_label_position('top')
     cax.set_xlabel(strflux)
@@ -457,6 +490,8 @@ def produce_final_image():
         Delta_min = 0.;          # arcsec, amplitude of offset from the star
         RA = 0.0  # if input image is a prediction, star should be at the center
         DEC = 0.0 # note that this deprojection routine works in WCS coordinates
+
+        # CUIDADIN! testing purposes
         cosi = np.cos(par.inclination_input*np.pi/180.)
 
         if par.verbose == 'Yes':
@@ -483,6 +518,9 @@ def produce_final_image():
         # Read fits file with deprojected field in polar coordinates
         f = fits.open(filein)
         convolved_intensity = f[0].data    # uJy/beam
+
+        if par.log_colorscale == 'Yes':
+            convolved_intensity[convolved_intensity <= min] = min # min defined above
 
         # azimuthal shift such that PA=0 corresponds to y-axis pointing upwards, and
         # increases counter-clockwise from that axis
@@ -523,13 +561,8 @@ def produce_final_image():
 
         
         # imshow does a bilinear interpolation. You can switch it off by putting
-        # interpolation='none'
-        min = convolved_intensity.min()  # not exactly same as 0
-        max = convolved_intensity.max()
-        if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
-            min = 0.0
-            max = 1.0  # cuidadin 1.0
-        CM = ax.imshow(convolved_intensity, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[-180,180,0,np.maximum(abs(a0),abs(a1))], vmin=min, vmax=max, aspect='auto')   # (left, right, bottom, top)
+        # interpolation='none'. Note that mynorm has already been defined above
+        CM = ax.imshow(convolved_intensity, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[-180,180,0,np.maximum(abs(a0),abs(a1))], norm=mynorm, aspect='auto')   # (left, right, bottom, top)
 
         # Add wavelength in bottom-left corner
         strlambda = '$\lambda$='+str(round(lbda0, 2))+'mm' # round to 2 decimals
@@ -545,6 +578,8 @@ def produce_final_image():
         cax.xaxis.tick_top()
         cax.xaxis.set_tick_params(labelsize=20, direction='out')
         cax.xaxis.set_major_locator(plt.MaxNLocator(6))
+        if par.log_colorscale == 'Yes':
+            cax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=10))
         # title on top
         cax.xaxis.set_label_position('top')
         cax.set_xlabel(strflux)
@@ -560,7 +595,8 @@ def produce_final_image():
                 for i in range(par.nbpixels):
                     average_convolved_intensity[j]+=convolved_intensity[j][i]/par.nbpixels
 
-            rkarr = np.linspace(0,par.gas.rmed[-1]*1e2*par.gas.culength/par.au/par.distance,par.nbpixels) # radius in arcseconds
+            #rkarr = np.linspace(0,par.gas.rmed[-1]*1e2*par.gas.culength/par.au/par.distance,par.nbpixels) # radius in arcseconds
+            rkarr = np.linspace(0,np.maximum(abs(a0),abs(a1)),par.nbpixels) # radius in arcseconds
             
             nb_noise = 0
             if par.add_noise == 'Yes':
@@ -575,16 +611,22 @@ def produce_final_image():
 
             fig = plt.figure(figsize=(8.,8.))
             ax = plt.gca()
-            plt.subplots_adjust(left=0.12, right=0.96, top=0.96, bottom=0.09)
+            plt.subplots_adjust(left=0.14, right=0.96, top=0.96, bottom=0.09)
 
-            ax.plot(rkarr,average_convolved_intensity, color='k')
+            ax.plot(rkarr,average_convolved_intensity, color=par.c20[0])
             ax.xaxis.set_ticks_position('both')
             ax.yaxis.set_ticks_position('both')
+            ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+            
+            ax.tick_params(axis='x', which='minor', top=True)
+            ax.tick_params(axis='y', which='minor', right=True)
             ax.set_xlim(0,rkarr.max())      # Deprojected radius in arcsec
             ax.tick_params('both')
             ax.set_xlabel('Radius [arcsec]')
             ax.set_ylabel(strflux)
 
+            ax.grid(axis='both', which='major', ls='-', alpha=0.8)
+            
             plt.savefig('./'+'axi'+fileout, dpi=160)
             plt.clf()
 

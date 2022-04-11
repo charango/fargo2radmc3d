@@ -28,6 +28,7 @@ def plot_dust_temperature():
     matplotlib.rc('font', family='Arial')
     fontcolor='white'
 
+    
     print('--------- Plotting azimuthally-averaged temperature (R,z) for all dust size bins ----------')
 
     radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.tedge)

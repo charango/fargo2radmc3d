@@ -59,7 +59,12 @@ for line in lines_params:
         try:
             int(value)         # we try with integer
         except ValueError:     # if it is not integer nor float
-            value = '"' + value + '"'   # if none of the above tests work, we know value is a string
+            # we try with array with several values separated by a comma (,)
+            if(regex.search(value) != None):  
+                if name == 'dustfluids':
+                    value = [int(x) for x in value.split(',')]
+            else:
+                value = '"' + value + '"'   # if none of the above tests work, we know value is a string
     par.append(value)
     var.append(name)
 
@@ -79,8 +84,12 @@ if verbose == 'Yes':
 # was simulation carried out with Fargo3D?
 hydro2D = 'Yes'
 fargo3d = 'No'
-if os.path.isfile(dir+'/summary0.dat') == True:
+if os.path.isfile(dir+'/variables.par') == True:
     fargo3d = 'Yes'
+
+if fargo3d == 'No':
+    dustfluids = 'No'
+    
 
 # Check if Fargo3D simulation was carried out in 2D or in 3D by
 # fetching NZ in the variables.par file:
@@ -99,6 +108,8 @@ if RTdust_or_gas == 'dust':
     incl_dust  = 1
     incl_lines = 0
     linenlam = 1
+    if not('dust_interpolation' in open('params.dat').read()):
+        dust_interpolation = 'T'
 if RTdust_or_gas == 'gas':
     incl_lines = 1
     incl_dust  = 0
@@ -126,12 +137,14 @@ nb_photons_scat = int(nb_photons_scat)
     
 if incl_lines == 1 and moment_order == 1 and inclination == 0.0:
     sys.exit("To get an actual velocity map you need a non-zero disc inclination. Abort!")
+
+if polarized_scat == 'Yes' and scat_mode != 5:
+    scat_mode = 5
+    print("To get a polarized intensity image you need scat_mode = 5 in params.dat! I've switched scat_mode to 5, please check this is what you aim for!")
     
-if hydro2D == 'Yes' and polarized_scat == 'Yes':
-    z_expansion = 'G'  # vertical expansion of dust surface density
-    if scat_mode != 5:
-        scat_mode = 5
-        print("To get a polarized intensity image you need scat_mode = 5 in params.dat! I've switched scat_mode to 5, please check this is what you aim for!")
+#if ( (fargo3d == 'No' and polarized_scat == 'Yes') or (fargo3d == 'Yes' and dustfluids == 'No') ):
+if polarized_scat == 'Yes':
+    z_expansion = 'G'  # Gaussian vertical expansion of dust surface density
 
 if ncol%2 == 1:
     ncol += 1
@@ -158,6 +171,54 @@ if xaxisflip == 'Yes':
 bpaangle = -90.0-bpaangle
 
 
+# Dust global parameters in Fargo3D simulations
+if fargo3d == 'Yes':
+    command = 'awk " /^DUSTINTERNALRHO/ " '+dir+'/variables.par'
+    # check which version of python we're using
+    if sys.version_info[0] < 3:   # python 2.X
+        buf = subprocess.check_output(command, shell=True)
+    else:                         # python 3.X
+        buf = subprocess.getoutput(command)
+    dust_internal_density = float(buf.split()[1])   # in g / cm^3
+    # case where dust fluids are simulated
+    if dustfluids != 'No':
+        # find out how many dust fluids there are:
+        input_file = dir+'/dustsizes.dat'
+        dust_id, dust_size, dust_gas_ratio = np.loadtxt(input_file,unpack=True)
+        nbin = len(np.atleast_1d(dust_id))   # in case only a single dust fluid is used
+        if nbin != 1:
+            amin = dust_size[dustfluids[0]-1]
+            amax = dust_size[dustfluids[1]-1]
+            nbin = dustfluids[1]-dustfluids[0]+1
+            bins = dust_size[dustfluids[0]-1:dustfluids[1]]
+        else: # case only a single dust fluid is used
+            amin = dust_size
+            amax = amin
+            nbin = 1
+            bins = [dust_size]
+            dust_id = [dust_id]
+            dust_size = [dust_size]
+            dust_gas_ratio = [dust_gas_ratio]
+        '''
+        # old text below could be used when there is no feedback on gas 
+        # and that we want to remormalize stuff?
+        amin = dust_size.min()
+        amax = dust_size.max()
+        bins = np.logspace(np.log10(amin), np.log10(amax), nbin)   
+        ratio = np.sum(dust_gas_ratio)
+        command = 'awk " /^DUSTSLOPEDIST/ " '+dir+'/variables.par'
+        # check which version of python we're using
+        if sys.version_info[0] < 3:   # python 2.X
+            buf = subprocess.check_output(command, shell=True)
+        else:                         # python 3.X
+            buf = subprocess.getoutput(command)
+        pindex = -float(buf.split()[1])
+        '''
+    else:
+        bins = np.logspace(np.log10(amin), np.log10(amax), nbin+1) 
+else:
+    bins = np.logspace(np.log10(amin), np.log10(amax), nbin+1) 
+        
 # label for the name of the image file created by RADMC3D
 if RTdust_or_gas == 'dust':
     label = dir+'_o'+str(on)+'_p'+str(pindex)+'_r'+str(ratio)+'_a'+str(amin)+'_'+str(amax)+'_nb'+str(nbin)+'_mode'+str(scat_mode)+'_np'+str('{:.0e}'.format(nb_photons))+'_nc'+str(ncol)+'_z'+str(z_expansion)+'_xf'+str(xaxisflip)+'_Td'+str(Tdust_eq_Thydro)
@@ -212,120 +273,97 @@ if os.path.isfile(outputfitsfile) == False and recalc_rawfits == 'No':
     print('file '+outputfitsfile+' is missing, I need to activate recalc_rawfits')
     recalc_rawfits = 'Yes'
 
+if recalc_radmc == 'Yes' and os.path.isfile('image.fits') == True:
+    os.system('rm -f image.fits')
+    if verbose == 'Yes':
+        print('image.fits already existing: I need to erase it!...')
+    
 if not('bin_small_dust' in open('params.dat').read()):
     bin_small_dust = 'No'
 if not('dustdens_eq_gasdens' in open('params.dat').read()):
     dustdens_eq_gasdens = 'No'
 
     
-# get the aspect ratio and flaring index used in the numerical simulation
-# note that this works both for Dusty FARGO-ADSG and FARGO3D simulations
-command = 'gawk " BEGIN{IGNORECASE=1} /^AspectRatio/ " '+dir+'/*.par'
-# check which version of python we're using
-if sys.version_info[0] < 3:   # python 2.X
-    buf = subprocess.check_output(command, shell=True)
-else:                         # python 3.X
-    buf = subprocess.getoutput(command)
-aspectratio = float(buf.split()[1])
+# Set of parameters that we only need to read or specify if radmc3d is run
+if recalc_radmc == 'Yes':    
+    # get the aspect ratio and flaring index used in the numerical simulation
+    # note that this works both for Dusty FARGO-ADSG and FARGO3D simulations
+    command = 'gawk " BEGIN{IGNORECASE=1} /^AspectRatio/ " '+dir+'/*.par'
+    # check which version of python we're using
+    if sys.version_info[0] < 3:   # python 2.X
+        buf = subprocess.check_output(command, shell=True)
+    else:                         # python 3.X
+        buf = subprocess.getoutput(command)
+    aspectratio = float(buf.split()[1])
 
-# get the flaring index used in the numerical simulation
-# note that this works both for Dusty FARGO-ADSG and FARGO3D simulations
-command = 'gawk " BEGIN{IGNORECASE=1} /^FlaringIndex/ " '+dir+'/*.par'
-if sys.version_info[0] < 3:
-    buf = subprocess.check_output(command, shell=True)
-else:
-    buf = subprocess.getoutput(command)
-flaringindex = float(buf.split()[1])
-
-# get the alpha viscosity used in the numerical simulation
-if fargo3d == 'No':
-    try:
-        command = 'awk " /^AlphaViscosity/ " '+dir+'/*.par'
-        if sys.version_info[0] < 3:
-            buf = subprocess.check_output(command, shell=True)
-        else:
-            buf = subprocess.getoutput(command)
-        alphaviscosity = float(buf.split()[1])
-# if no alphaviscosity, then try to see if a constant
-# kinematic viscosity has been used in the simulation
-    except IndexError:
-        command = 'awk " /^Viscosity/ " '+dir+'/*.par'
-        if sys.version_info[0] < 3:
-            buf = subprocess.check_output(command, shell=True)
-        else:
-            buf = subprocess.getoutput(command)
-        viscosity = float(buf.split()[1])
-        # simply set constant alpha value as nu / h^2 (ok at code's unit of length)
-        alphaviscosity = viscosity * (aspectratio**(-2.0))
-if fargo3d == 'Yes':
-    try:
-        command = 'awk " /^Alpha/ " '+dir+'/*.par'
-        if sys.version_info[0] < 3:
-            buf = subprocess.check_output(command, shell=True)
-        else:
-            buf = subprocess.getoutput(command)
-        alphaviscosity = float(buf.split()[1])
-# if no alphaviscosity, then try to see if a constant
-# kinematic viscosity has been used in the simulation
-    except IndexError:
-        command = 'awk " /^Nu/ " '+dir+'/*.par'
-        if sys.version_info[0] < 3:
-            buf = subprocess.check_output(command, shell=True)
-        else:
-            buf = subprocess.getoutput(command)
-        viscosity = float(buf.split()[1])
-        # simply set constant alpha value as nu / h^2 (ok at code's unit of length)
-        alphaviscosity = viscosity * (aspectratio**(-2.0))
-        
-# get the grid's radial spacing
-if fargo3d == 'No':
-    command = 'awk " /^RadialSpacing/ " '+dir+'/*.par'
+    # get the flaring index used in the numerical simulation
+    # note that this works both for Dusty FARGO-ADSG and FARGO3D simulations
+    command = 'gawk " BEGIN{IGNORECASE=1} /^FlaringIndex/ " '+dir+'/*.par'
     if sys.version_info[0] < 3:
         buf = subprocess.check_output(command, shell=True)
     else:
         buf = subprocess.getoutput(command)
-    radialspacing = str(buf.split()[1])
+    flaringindex = float(buf.split()[1])
+    
+    # get the alpha viscosity used in the numerical simulation
+    if fargo3d == 'No':
+        try:
+            command = 'awk " /^AlphaViscosity/ " '+dir+'/*.par'
+            if sys.version_info[0] < 3:
+                buf = subprocess.check_output(command, shell=True)
+            else:
+                buf = subprocess.getoutput(command)
+            alphaviscosity = float(buf.split()[1])
+    # if no alphaviscosity, then try to see if a constant
+    # kinematic viscosity has been used in the simulation
+        except IndexError:
+            command = 'awk " /^Viscosity/ " '+dir+'/*.par'
+            if sys.version_info[0] < 3:
+                buf = subprocess.check_output(command, shell=True)
+            else:
+                buf = subprocess.getoutput(command)
+            viscosity = float(buf.split()[1])
+            # simply set constant alpha value as nu / h^2 (ok at code's unit of length)
+            alphaviscosity = viscosity * (aspectratio**(-2.0))
+    if fargo3d == 'Yes':
+        try:
+            command = 'awk " /^ALPHA/ " '+dir+'/*.par'
+            if sys.version_info[0] < 3:
+                buf = subprocess.check_output(command, shell=True)
+            else:
+                buf = subprocess.getoutput(command)
+            alphaviscosity = float(buf.split()[1])
+    # if no alphaviscosity, then try to see if a constant
+    # kinematic viscosity has been used in the simulation
+        except IndexError:
+            command = 'awk " /^NU/ " '+dir+'/*.par'
+            if sys.version_info[0] < 3:
+                buf = subprocess.check_output(command, shell=True)
+            else:
+                buf = subprocess.getoutput(command)
+            viscosity = float(buf.split()[1])
+            # simply set constant alpha value as nu / h^2 (ok at code's unit of length)
+            alphaviscosity = viscosity * (aspectratio**(-2.0))
+            
+    # get the grid's radial spacing
+    if fargo3d == 'No':
+        command = 'awk " /^RadialSpacing/ " '+dir+'/*.par'
+        if sys.version_info[0] < 3:
+            buf = subprocess.check_output(command, shell=True)
+        else:
+            buf = subprocess.getoutput(command)
+        radialspacing = str(buf.split()[1])
 
-
-# Dust global parameters
-if fargo3d == 'No' or polarized_scat == 'Yes':
-    bins = np.logspace(np.log10(amin), np.log10(amax), nbin+1)        
-        
-if fargo3d == 'Yes' and polarized_scat == 'No':
-    # find out how many dust fluids there are:
-    input_file = dir+'/dustsizes.dat'
-    dust_id, dust_size, dust_gas_ratio = np.loadtxt(input_file,unpack=True)
-    nbin = len(dust_id)
-    amin = dust_size.min()
-    amax = dust_size.max()
-    bins = np.logspace(np.log10(amin), np.log10(amax), nbin)   
-    ratio = np.sum(dust_gas_ratio)
-    command = 'awk " /^DUSTSLOPEDIST/ " '+dir+'/variables.par'
-    # check which version of python we're using
-    if sys.version_info[0] < 3:   # python 2.X
-        buf = subprocess.check_output(command, shell=True)
-    else:                         # python 3.X
-        buf = subprocess.getoutput(command)
-    pindex = -float(buf.split()[1])
-    command = 'awk " /^DUSTINTERNALRHO/ " '+dir+'/variables.par'
-    # check which version of python we're using
-    if sys.version_info[0] < 3:   # python 2.X
-        buf = subprocess.check_output(command, shell=True)
-    else:                         # python 3.X
-        buf = subprocess.getoutput(command)
-    dust_internal_density = float(buf.split()[1])   # in g / cm^3
+    # Finally, get gas surface density field from hydro simulation, with
+    # the aim to inherit from the parameters attached to the mesh
+    # structure (rmed, Nrad etc.)
+    from field import *
+    from mesh import *
+    gas  = Field(field='gasdens'+str(on)+'.dat', directory=dir)
 
 
 # Color map
 if not('mycolormap' in open('params.dat').read()):
     mycolormap = 'nipy_spectral'
-if moment_order == 1:
+if RTdust_or_gas == 'gas' and moment_order == 1:
     mycolormap = 'RdBu_r'
-
-
-# Finally, get gas surface density field from hydro simulation, with
-# the aim to inherit from the parameters attached to the mesh
-# structure (rmed, Nrad etc.)
-from field import *
-from mesh import *
-gas  = Field(field='gasdens'+str(on)+'.dat', directory=dir)
