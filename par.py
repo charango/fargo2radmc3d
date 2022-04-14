@@ -172,7 +172,7 @@ bpaangle = -90.0-bpaangle
 
 
 # Dust global parameters in Fargo3D simulations
-if fargo3d == 'Yes':
+if fargo3d == 'Yes' and RTdust_or_gas == 'dust':
     command = 'awk " /^DUSTINTERNALRHO/ " '+dir+'/variables.par'
     # check which version of python we're using
     if sys.version_info[0] < 3:   # python 2.X
