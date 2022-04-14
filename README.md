@@ -6,3 +6,5 @@ The program works with both Python 2.X and Python 3.X. It requires a parameter f
 Dust opacities can be computed with bhmie.py, which is a python version of the Bohren & Huffman Mie code ported by Cornelis Dullemond, and with makedustopac.py, also written by Cornelis Dullemond. Both python programs can be found in the opacity subroutines provided by RADMC3D (v 0.41). An .tar.gz archive containing optical constants (.lnk files) and pre-computed dust continuum opacities (.inp files) is also provided.
 
 Please have a look at the documentation (8 pages) to check how the code works and what the different options and parameters in params.dat are.
+
+NB: for the program to run properly, you need to have gawk and curl installed. You also need the executable 'radmc3d' to be callable as a command line on the terminal (you can do so by editing your .bashrc file if you use bash by exporting the full directory to the radmc3d executable into the PATH global environment).
