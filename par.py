@@ -362,6 +362,9 @@ if recalc_radmc == 'Yes':
     gas  = Field(field='gasdens'+str(on)+'.dat', directory=dir)
 
 
+if recalc_radmc == 'No':
+    recalc_gas_quantities = 'No'
+
 # Color map
 if not('mycolormap' in open('params.dat').read()):
     mycolormap = 'nipy_spectral'

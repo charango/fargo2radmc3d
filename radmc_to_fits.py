@@ -21,7 +21,8 @@ def exportfits():
     # ----------
     if os.path.isfile('image.out') == True:
 
-        infile = 'image.out'        
+        infile = 'image.out'
+        print('--------- reading image.out ----------')
         f = open(infile,'r')
 
         # read header info:
@@ -30,7 +31,8 @@ def exportfits():
         # nb of pixels
         im_nx, im_ny = tuple(np.array(f.readline().split(),dtype=int))  
 
-        # nb of wavelengths, can be different from one for multi-color images of gas emission
+        # nb of wavelengths, can be different from unity for
+        # multi-color images of gas emission
         nlam = int(f.readline())
 
         # pixel size in each direction in cm
@@ -70,48 +72,47 @@ def exportfits():
         fluxfactor = 1.e23 * pixsurf_ster
         if par.verbose == 'Yes':
             print('fluxfactor = ',fluxfactor)
-
+            
+        # distance is in cm here
+        distance = par.distance * par.pc
+        pixsize_x  = pixsize_x_deg * distance * np.pi / 180.0
+        
         # beam area in pixel^2
         mycdelt = pixsize_x/par.distance/par.au
         beam =  (np.pi/(4.*np.log(2.)))*par.bmaj*par.bmin/(mycdelt**2.)
         if par.verbose == 'Yes':
             print('beam = ',beam)
-        
+            
         # stdev lengths in pixel
         stdev_x = (par.bmaj/(2.*np.sqrt(2.*np.log(2.)))) / mycdelt
         stdev_y = (par.bmin/(2.*np.sqrt(2.*np.log(2.)))) / mycdelt
+            
+        # gas or dust continuum -> 1D array:
+        if par.RTdust_or_gas == 'gas' or (par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes'):
+            images = np.loadtxt(infile, skiprows=5+nlam)
 
+        # dust polarized emission -> 1D array:
+        if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
+            images = np.zeros((5*im_ny*im_nx))
+            im = images.reshape(5,im_ny,im_nx)
+
+            for j in range(im_ny):
+                for i in range(im_nx):
+                    line = f.readline()
+                    dat = line.split()
+                    im[0,j,i] = float(dat[0]) # I
+                    im[1,j,i] = float(dat[1]) # Q
+                    im[2,j,i] = float(dat[2]) # U
+                    im[3,j,i] = float(dat[3]) # V
+                    im[4,j,i] = math.sqrt(float(dat[1])**2.0+float(dat[2])**2.0) # P
+                    if (j == im_ny-1) and (i == im_nx-1):
+                        f.readline()     # empty line       
+
+            images = im.reshape(5*im_ny*im_nx)
+            
         # keep track of image.out by writting its content in image.fits 
         if os.path.isfile('image.fits') == False:
-            
-            print('--------- reading image.out ----------')
-            if par.polarized_scat == 'No':
-                images = np.loadtxt(infile, skiprows=5+nlam)
-
-            if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
-                images = np.zeros((5*im_ny*im_nx))
-                im = images.reshape(5,im_ny,im_nx)
-
-                for j in range(im_ny):
-                    for i in range(im_nx):
-                        line = f.readline()
-                        dat = line.split()
-                        im[0,j,i] = float(dat[0]) # I
-                        im[1,j,i] = float(dat[1]) # Q
-                        im[2,j,i] = float(dat[2]) # U
-                        im[3,j,i] = float(dat[3]) # V
-                        im[4,j,i] = math.sqrt(float(dat[1])**2.0+float(dat[2])**2.0) # P
-                        if (j == im_ny-1) and (i == im_nx-1):
-                            f.readline()     # empty line       
-
-                for k in range(5):
-                # sometimes the intensity has a value at the origin that
-                # is unrealistically large. We put it to zero at the
-                # origin, as it should be in our disc model!
-                    im[k,im_ny//2,im_nx//2] = 0.0
-                    im[k,im_ny//2+1,im_nx//2+1] = 0.0
-            
-
+                            
             print('--------- creating image.fits ----------')
             hdu = fits.PrimaryHDU()
             hdu.header['BITPIX'] = -32
@@ -157,25 +158,40 @@ def exportfits():
         images = f2[0].data
         hdr = f2[0].header
         f2.close()
-        
-        mydim = hdr['NAXIS']
-        if mydim == 2:
-            im_nx = hdr['NAXIS1']
-            im_ny = hdr['NAXIS2']
-        if mydim == 1:
-            im_nx = int(np.sqrt(hdr['NAXIS1']))
-            im_ny = im_nx
 
+        mydim = hdr['NAXIS']
+
+        # Get dimensions from 1D array stored in image.fits:
         if par.RTdust_or_gas == 'gas':
             nlam = par.linenlam
+            im_nx = int(np.sqrt(hdr['NAXIS1']/nlam))
+        else:
+            if par.polarized_scat == 'Yes':
+                im_nx = int(np.sqrt(hdr['NAXIS1']/5.0))
+            else:
+                im_nx = int(np.sqrt(hdr['NAXIS1']))
+        im_ny = im_nx
 
         lbda0 = hdr['LBDAMIC']
-            
+
+        # ----------
         # auxiliary quantities needed below for operations on gas images
+        # ----------
         pixsize_x_deg = np.abs(hdr['CDELT1'])
         pixsize_y_deg = np.abs(hdr['CDELT2'])
+
+        # we need to define dv again (velocity resolution in km/s)
+        dv = par.widthkms / par.linenlam 
+        
+        # surface of a pixel in radian squared
         pixsurf_ster = pixsize_x_deg*pixsize_y_deg * (np.pi/180.)**2
+
+        # 1 Jansky converted in cgs x pixel surface in cm^2 (same
+        # conversion whether RT in dust or gas lines)
         fluxfactor = 1.e23 * pixsurf_ster
+        if par.verbose == 'Yes':
+            print('fluxfactor = ',fluxfactor)
+            
         # distance is in cm here
         distance = par.distance * par.pc
         pixsize_x  = pixsize_x_deg * distance * np.pi / 180.0
@@ -203,7 +219,20 @@ def exportfits():
         # origin, as it should be in our disc model!
         im[im_ny//2,im_nx//2] = 0.0
         im[im_ny//2+1,im_nx//2+1] = 0.0
-        
+
+    # - - - - - -
+    # dust polarized RT calculations
+    # - - - - - -
+    if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
+        im = images.reshape(5,im_ny,im_nx)
+
+        for k in range(5):
+            # sometimes the intensity has a value at the origin that
+            # is unrealistically large. We put it to zero at the
+            # origin, as it should be in our disc model!
+            im[k,im_ny//2,im_nx//2] = 0.0
+            im[k,im_ny//2+1,im_nx//2+1] = 0.0
+
     # - - - - - -
     # gas line RT calculations
     # - - - - - -
@@ -258,40 +287,11 @@ def exportfits():
             im = moment0   # non-convolved quantity
         if par.RTdust_or_gas == 'gas' and par.moment_order == 1:
             im = moment1/moment0 # ratio of two beam-convolved quantities (convolution not redone afterwards)
-
-    # - - - - - -
-    # dust polarized RT calculations
-    # - - - - - -
-    # CB (Feb 2022): i need to work on this part, and see if I could simply read image.fits...
-    if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
-        images = np.zeros((5*im_ny*im_nx))
-        im = images.reshape(5,im_ny,im_nx)
-
-        for j in range(im_ny):
-            for i in range(im_nx):
-                line = f.readline()
-                dat = line.split()
-                im[0,j,i] = float(dat[0]) # I
-                im[1,j,i] = float(dat[1]) # Q
-                im[2,j,i] = float(dat[2]) # U
-                im[3,j,i] = float(dat[3]) # V
-                im[4,j,i] = math.sqrt(float(dat[1])**2.0+float(dat[2])**2.0) # P
-                if (j == im_ny-1) and (i == im_nx-1):
-                    f.readline()     # empty line       
-
-        for k in range(5):
-            # sometimes the intensity has a value at the origin that
-            # is unrealistically large. We put it to zero at the
-            # origin, as it should be in our disc model!
-            im[k,im_ny//2,im_nx//2] = 0.0
-            im[k,im_ny//2+1,im_nx//2+1] = 0.0
-                    
     
-    
+
     # ----------
     # Finally write (modified) images in fits file
     # ----------
-    
     # Fits header
     hdu = fits.PrimaryHDU()
     hdu.header['BITPIX'] = -32
@@ -345,7 +345,8 @@ def exportfits():
 
         
     # ----------
-    # finally, save entire intensity channels in another fits file
+    # finally, save entire intensity channels in another fits file (gas line
+    # emission only)
     # ----------
     # case 1: application to CASA -> intensity in Jy/pixel, axis 4 = spectral
     if par.RTdust_or_gas == 'gas' and par.intensity_inJyperpixel_inrawdatacube == 'Yes':
