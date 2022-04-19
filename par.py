@@ -113,6 +113,7 @@ if RTdust_or_gas == 'dust':
 if RTdust_or_gas == 'gas':
     incl_lines = 1
     incl_dust  = 0
+    polarized_scat = 'No'
     # currently in our RT gas calculations, the gas temperature has to
     # be that of the hydro simulation (it cannot be equal to the dust
     # temperature computed by a RT Monte-Carlo calculation)
