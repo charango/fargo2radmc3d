@@ -88,7 +88,7 @@ def exportfits():
         stdev_y = (par.bmin/(2.*np.sqrt(2.*np.log(2.)))) / mycdelt
             
         # gas or dust continuum -> 1D array:
-        if par.RTdust_or_gas == 'gas' or (par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes'):
+        if par.RTdust_or_gas == 'gas' or (par.RTdust_or_gas == 'dust' and par.polarized_scat == 'No'):
             images = np.loadtxt(infile, skiprows=5+nlam)
 
         # dust polarized emission -> 1D array:
