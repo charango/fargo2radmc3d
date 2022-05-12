@@ -570,10 +570,11 @@ def compute_dust_mass_volume_density():
         ax.set_ylim(Z.min(),Z.max())
         ax.set_xlim(R.min(),R.max())
 
-        if axidens_smallest.min() != 0.0:
-            mynorm = matplotlib.colors.LogNorm(vmin=axidens_smallest.min(),vmax=axidens_smallest.max())
-        else:
+        if axidens_smallest.max()/axidens_smallest.min() > 1e3:
             mynorm = matplotlib.colors.LogNorm(vmin=1e-3*axidens_smallest.max(),vmax=axidens_smallest.max())
+        else:
+            mynorm = matplotlib.colors.LogNorm(vmin=axidens_smallest.min(),vmax=axidens_smallest.max())
+            
         CF = ax.pcolormesh(R,Z,axidens_smallest,cmap='nipy_spectral',norm=mynorm)
 
         divider = make_axes_locatable(ax)
@@ -604,10 +605,11 @@ def compute_dust_mass_volume_density():
         ax.set_ylim(Z.min(),Z.max())
         ax.set_xlim(R.min(),R.max())
 
-        if axidens_largest.min() != 0.0:
-            mynorm = matplotlib.colors.LogNorm(vmin=axidens_largest.min(),vmax=axidens_largest.max())
-        else:
+        if axidens_largest.max()/axidens_largest.min() > 1e3:
             mynorm = matplotlib.colors.LogNorm(vmin=1e-3*axidens_largest.max(),vmax=axidens_largest.max())
+        else:
+            mynorm = matplotlib.colors.LogNorm(vmin=axidens_largest.min(),vmax=axidens_largest.max())
+
         CF = ax.pcolormesh(R,Z,axidens_largest,cmap='nipy_spectral',norm=mynorm)
 
         divider = make_axes_locatable(ax)
@@ -640,16 +642,11 @@ def compute_dust_mass_volume_density():
         ax.set_ylim(Y.min(),Y.max())
         ax.set_xlim(X.min(),X.max())
 
-        if midplane_dens_smallest.min() != 0.0:
-            mynorm = matplotlib.colors.LogNorm(vmin=midplane_dens_smallest.min(),vmax=midplane_dens_smallest.max())
-        else:
-            mynorm = matplotlib.colors.LogNorm(vmin=1e-3*midplane_dens_smallest.max(),vmax=midplane_dens_smallest.max())
-        '''
         if midplane_dens_smallest.max()/midplane_dens_smallest.min() > 1e3:
             mynorm = matplotlib.colors.LogNorm(vmin=1e-3*midplane_dens_smallest.max(),vmax=midplane_dens_smallest.max())
         else:
             mynorm = matplotlib.colors.LogNorm(vmin=midplane_dens_smallest.min(),vmax=midplane_dens_smallest.max())
-        '''
+
         midplane_dens_smallest = np.transpose(midplane_dens_smallest)
         CF = ax.pcolormesh(X,Y,midplane_dens_smallest,cmap='nipy_spectral',norm=mynorm,rasterized=True)
         #CF = ax.pcolormesh(X,Y,midplane_dens_smallest,cmap='nipy_spectral',norm=mynorm)
@@ -680,17 +677,12 @@ def compute_dust_mass_volume_density():
         ax.set_ylabel('y [au]')
         ax.set_ylim(Y.min(),Y.max())
         ax.set_xlim(X.min(),X.max())
-
-        if midplane_dens_largest.min() != 0.0:
-            mynorm = matplotlib.colors.LogNorm(vmin=midplane_dens_largest.min(),vmax=midplane_dens_largest.max())
-        else:
-            mynorm = matplotlib.colors.LogNorm(vmin=1e-3*midplane_dens_largest.max(),vmax=midplane_dens_largest.max())
-        '''
+        
         if midplane_dens_largest.max()/midplane_dens_largest.min() > 1e3:
             mynorm = matplotlib.colors.LogNorm(vmin=1e-3*midplane_dens_largest.max(),vmax=midplane_dens_largest.max())
         else:
             mynorm = matplotlib.colors.LogNorm(vmin=midplane_dens_largest.min(),vmax=midplane_dens_largest.max())
-        '''
+
         midplane_dens_largest = np.transpose(midplane_dens_largest)
         CF = ax.pcolormesh(X,Y,midplane_dens_largest,cmap='nipy_spectral',norm=mynorm,rasterized=True)
         #CF = ax.pcolormesh(X,Y,midplane_dens_largest,cmap='nipy_spectral',norm=mynorm)

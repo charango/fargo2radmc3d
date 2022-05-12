@@ -415,22 +415,47 @@ def produce_final_image():
             min = par.min_colorscale
         # avoid negative values of array
         convolved_intensity[convolved_intensity <= min] = min
-    
+
     if par.log_colorscale == 'Yes':
         mynorm = matplotlib.colors.LogNorm(vmin=min,vmax=max)
     else:
         mynorm = matplotlib.colors.Normalize(vmin=min,vmax=max)
 
+    print(min,convolved_intensity.min())
+    print(max,convolved_intensity.max())
     # imshow does a bilinear interpolation. You can switch it off by putting
     # interpolation='none'
     CM = ax.imshow(convolved_intensity, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[a0,a1,d0,d1], norm=mynorm, aspect='auto')
     
-    # Add wavelength in top-left corner
+    # Add wavelength/user-defined string in top-left/right corners
     strlambda = '$\lambda$='+str(round(lbda0, 2))+'mm' # round to 2 decimals
     if lbda0 < 0.01:
         strlambda = '$\lambda$='+str(round(lbda0*1e3,2))+'$\mu$m'
     ax.text(xlambda,dmax-0.166*da,strlambda, fontsize=20, color = 'white',weight='bold',horizontalalignment='left')
 
+    if ('display_time' in open('params.dat').read()) and (par.display_time == 'Yes'):
+        import itertools
+        with open(par.dir+"/orbit0.dat") as f_in:
+            firstline_orbitfile = np.genfromtxt(itertools.islice(f_in, 0, 1, None), dtype=float)
+        apla = firstline_orbitfile[2]
+        fargo3d = 'No'
+        if os.path.isfile(par.dir+'/summary0.dat') == True:
+            fargo3d = 'Yes'   
+        if fargo3d == 'Yes':
+            f1, xpla, ypla, f4, f5, f6, f7, f8, date, omega = np.loadtxt(par.dir+"/planet0.dat",unpack=True)
+        else:
+            f1, xpla, ypla, f4, f5, f6, f7, date, omega, f10, f11 = np.loadtxt(par.dir+"/planet0.dat",unpack=True)
+        
+        # check if planet0.dat file has only one line or more!
+        if isinstance(xpla, (list, tuple, np.ndarray)) == True:
+            omegaframe = omega[par.on]
+            time_in_code_units = round(date[par.on]/2./np.pi/apla/np.sqrt(apla),1)
+        else:
+            omegaframe = omega
+            time_in_code_units = round(date/2./np.pi/apla/np.sqrt(apla),1)
+        strtime = str(time_in_code_units)+' Porb'
+        ax.text(-xlambda,dmax-0.166*da,strtime, fontsize=20, color = 'white',weight='bold',horizontalalignment='right')
+    
     # Add + sign at the origin
     ax.plot(0.0,0.0,'+',color='white',markersize=10)
     '''
@@ -471,6 +496,7 @@ def produce_final_image():
     cax.xaxis.set_major_locator(plt.MaxNLocator(6))
     if par.log_colorscale == 'Yes':
         cax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=10))
+        # CB / Yinhao Wu: if the colorbar does not display properly, try to decrease numticks to 4 max.
     
     # title on top
     cax.xaxis.set_label_position('top')
@@ -565,11 +591,10 @@ def produce_final_image():
         CM = ax.imshow(convolved_intensity, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[-180,180,0,np.maximum(abs(a0),abs(a1))], norm=mynorm, aspect='auto')   # (left, right, bottom, top)
 
         # Add wavelength in bottom-left corner
-        strlambda = '$\lambda$='+str(round(lbda0, 2))+'mm' # round to 2 decimals
-        if lbda0 < 0.01:
-            strlambda = '$\lambda$='+str(round(lbda0*1e3,2))+'$\mu$m'
         ax.text(-160,0.95*ymax,strlambda,fontsize=20,color='white',weight='bold',horizontalalignment='left',verticalalignment='top')
-
+        if ('display_time' in open('params.dat').read()) and (par.display_time == 'Yes'):
+            ax.text(160,0.95*ymax,strtime,fontsize=20,color='white',weight='bold',horizontalalignment='right',verticalalignment='top')
+        
         # plot color-bar
         from mpl_toolkits.axes_grid1 import make_axes_locatable
         divider = make_axes_locatable(ax)
