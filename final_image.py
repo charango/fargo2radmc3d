@@ -433,7 +433,7 @@ def produce_final_image():
         strlambda = '$\lambda$='+str(round(lbda0*1e3,2))+'$\mu$m'
     ax.text(xlambda,dmax-0.166*da,strlambda, fontsize=20, color = 'white',weight='bold',horizontalalignment='left')
 
-    if ('display_time' in open('params.dat').read()) and (par.display_time == 'Yes'):
+    if ( (('display_time' in open('params.dat').read()) and (par.display_time == 'Yes')) or (('spot_planet' in open('params.dat').read()) and (par.spot_planet == 'Yes')) ):
         import itertools
         with open(par.dir+"/orbit0.dat") as f_in:
             firstline_orbitfile = np.genfromtxt(itertools.islice(f_in, 0, 1, None), dtype=float)
@@ -454,7 +454,46 @@ def produce_final_image():
             omegaframe = omega
             time_in_code_units = round(date/2./np.pi/apla/np.sqrt(apla),1)
         strtime = str(time_in_code_units)+' Porb'
-        ax.text(-xlambda,dmax-0.166*da,strtime, fontsize=20, color = 'white',weight='bold',horizontalalignment='right')
+
+        # Add time in top-right corner
+        if par.display_time == 'Yes':
+            ax.text(-xlambda,dmax-0.166*da,strtime, fontsize=20, color = 'white',weight='bold',horizontalalignment='right')
+
+        # Spot planet position in sky-plane
+        if par.spot_planet == 'Yes':
+            xp = xpla[par.on] # in disc simulation plane
+            yp = ypla[par.on] # in disc simulation plane
+            if par.xaxisflip == 'Yes':
+                xp = -xp
+            print('planet position on simulation plane [code units]: xp = ', xp, ' and yp = ', yp)
+            # convert from simulation units to arcsecond:
+            if par.recalc_radmc == 'Yes':
+                code_unit_of_length = par.gas.culength
+            else:
+                if par.fargo3d == 'No':
+                    cumass, culength, cutime, cutemp = np.loadtxt(par.dir+"/units.dat",unpack=True)
+                else:
+                    import sys
+                    import subprocess
+                    command = 'awk " /^UNITOFLENGTHAU/ " '+par.dir+'/variables.par'
+                    # check which version of python we're using
+                    if sys.version_info[0] < 3:   # python 2.X
+                        buf = subprocess.check_output(command, shell=True)
+                    else:                         # python 3.X
+                        buf = subprocess.getoutput(command)
+                    culength = float(buf.split()[1])*1.5e11  #from au to meters
+                code_unit_of_length = 1e2*culength # in cm
+            xp *= code_unit_of_length/par.au/par.distance
+            yp *= code_unit_of_length/par.au/par.distance
+            print('planet position on simulation plane [arcseconds]: xp = ', xp, ' and yp = ', yp)
+            phiangle_in_rad = par.phiangle*np.pi/180.0
+            # add 90 degrees to be consistent with RADMC3D's convention for position angle
+            posangle_in_rad = (par.posangle+90.0)*np.pi/180.0
+            inclination_in_rad = par.inclination*np.pi/180.0
+            xp_sky =  (xp*np.cos(phiangle_in_rad)+yp*np.sin(phiangle_in_rad))*np.cos(posangle_in_rad) + (-xp*np.sin(phiangle_in_rad)+yp*np.cos(phiangle_in_rad))*np.cos(inclination_in_rad)*np.sin(posangle_in_rad)
+            yp_sky = -(xp*np.cos(phiangle_in_rad)+yp*np.sin(phiangle_in_rad))*np.sin(posangle_in_rad) + (-xp*np.sin(phiangle_in_rad)+yp*np.cos(phiangle_in_rad))*np.cos(inclination_in_rad)*np.cos(posangle_in_rad)
+            print('planet position on sky-plane [arcseconds]: xp = ', xp_sky, ' and yp_sky = ', yp_sky)
+            ax.plot(xp_sky,yp_sky,'x',color='white',markersize=10)
     
     # Add + sign at the origin
     ax.plot(0.0,0.0,'+',color='white',markersize=10)
@@ -462,7 +501,7 @@ def produce_final_image():
     if check_beam == 'Yes':
         ax.contour(convolved_intensity,levels=[0.5*convolved_intensity.max()],color='black', linestyles='-',origin='lower',extent=[a0,a1,d0,d1])
     '''
-
+    
     # Add a few contours in order 1 moment maps for gas emission
     if par.RTdust_or_gas == 'gas' and par.moment_order == 1:
         ax.contour(convolved_intensity,levels=10,color='black', linestyles='-',origin='lower',extent=[a0,a1,d0,d1])
@@ -590,11 +629,24 @@ def produce_final_image():
         # interpolation='none'. Note that mynorm has already been defined above
         CM = ax.imshow(convolved_intensity, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[-180,180,0,np.maximum(abs(a0),abs(a1))], norm=mynorm, aspect='auto')   # (left, right, bottom, top)
 
-        # Add wavelength in bottom-left corner
+        # Add wavelength in top-left corner
         ax.text(-160,0.95*ymax,strlambda,fontsize=20,color='white',weight='bold',horizontalalignment='left',verticalalignment='top')
+
+        # Option: add time in top-right corner
         if ('display_time' in open('params.dat').read()) and (par.display_time == 'Yes'):
             ax.text(160,0.95*ymax,strtime,fontsize=20,color='white',weight='bold',horizontalalignment='right',verticalalignment='top')
-        
+
+        # Option: spot planet position
+        if (('spot_planet' in open('params.dat').read()) and (par.spot_planet == 'Yes')):
+            import math
+            xp_proj = xp_sky
+            yp_proj = yp_sky #/ np.cos(inclination_in_rad)
+            rp_proj = np.sqrt(xp_proj*xp_proj + yp_proj*yp_proj)
+            # in degrees, measured earth of north
+            tp_proj = (np.pi + math.atan(yp_proj/xp_proj))*180./np.pi
+            print('planet position on deprojected sky-plane: rp ["] = ', rp_proj, ' and tp_proj [deg] = ', tp_proj)
+            ax.plot(tp_proj,rp_proj,'x',color='white',markersize=10)
+            
         # plot color-bar
         from mpl_toolkits.axes_grid1 import make_axes_locatable
         divider = make_axes_locatable(ax)
@@ -620,7 +672,6 @@ def produce_final_image():
                 for i in range(par.nbpixels):
                     average_convolved_intensity[j]+=convolved_intensity[j][i]/par.nbpixels
 
-            #rkarr = np.linspace(0,par.gas.rmed[-1]*1e2*par.gas.culength/par.au/par.distance,par.nbpixels) # radius in arcseconds
             rkarr = np.linspace(0,np.maximum(abs(a0),abs(a1)),par.nbpixels) # radius in arcseconds
             
             nb_noise = 0
