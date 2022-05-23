@@ -466,23 +466,28 @@ def produce_final_image():
             if par.xaxisflip == 'Yes':
                 xp = -xp
             print('planet position on simulation plane [code units]: xp = ', xp, ' and yp = ', yp)
+            
             # convert from simulation units to arcsecond:
             if par.recalc_radmc == 'Yes':
                 code_unit_of_length = par.gas.culength
             else:
-                if par.fargo3d == 'No':
-                    cumass, culength, cutime, cutemp = np.loadtxt(par.dir+"/units.dat",unpack=True)
+                if par.override_units == 'No':
+                    if par.fargo3d == 'No':
+                        cumass, culength, cutime, cutemp = np.loadtxt(par.dir+"/units.dat",unpack=True)
+                    else:
+                        import sys
+                        import subprocess
+                        command = 'awk " /^UNITOFLENGTHAU/ " '+par.dir+'/variables.par'
+                        # check which version of python we're using
+                        if sys.version_info[0] < 3:   # python 2.X
+                            buf = subprocess.check_output(command, shell=True)
+                        else:                         # python 3.X
+                            buf = subprocess.getoutput(command)
+                        culength = float(buf.split()[1])*1.5e11  #from au to meters
                 else:
-                    import sys
-                    import subprocess
-                    command = 'awk " /^UNITOFLENGTHAU/ " '+par.dir+'/variables.par'
-                    # check which version of python we're using
-                    if sys.version_info[0] < 3:   # python 2.X
-                        buf = subprocess.check_output(command, shell=True)
-                    else:                         # python 3.X
-                        buf = subprocess.getoutput(command)
-                    culength = float(buf.split()[1])*1.5e11  #from au to meters
-                code_unit_of_length = 1e2*culength # in cm
+                    culength = par.new_unit_length # in meters
+
+            code_unit_of_length = 1e2*culength # in cm
             xp *= code_unit_of_length/par.au/par.distance
             yp *= code_unit_of_length/par.au/par.distance
             print('planet position on simulation plane [arcseconds]: xp = ', xp, ' and yp = ', yp)
