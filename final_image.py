@@ -428,9 +428,12 @@ def produce_final_image():
     CM = ax.imshow(convolved_intensity, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[a0,a1,d0,d1], norm=mynorm, aspect='auto')
     
     # Add wavelength/user-defined string in top-left/right corners
-    strlambda = '$\lambda$='+str(round(lbda0, 2))+'mm' # round to 2 decimals
-    if lbda0 < 0.01:
-        strlambda = '$\lambda$='+str(round(lbda0*1e3,2))+'$\mu$m'
+    if ('display_label' in open('params.dat').read()):
+        strlambda = par.display_label
+    else:
+        strlambda = '$\lambda$='+str(round(lbda0, 2))+'mm' # round to 2 decimals
+        if lbda0 < 0.01:
+            strlambda = '$\lambda$='+str(round(lbda0*1e3,2))+'$\mu$m'
     ax.text(xlambda,dmax-0.166*da,strlambda, fontsize=20, color = 'white',weight='bold',horizontalalignment='left')
 
     if ( (('display_time' in open('params.dat').read()) and (par.display_time == 'Yes')) or (('spot_planet' in open('params.dat').read()) and (par.spot_planet == 'Yes')) ):
@@ -456,11 +459,11 @@ def produce_final_image():
         strtime = str(time_in_code_units)+' Porb'
 
         # Add time in top-right corner
-        if par.display_time == 'Yes':
+        if (('display_time' in open('params.dat').read()) and (par.display_time == 'Yes')):
             ax.text(-xlambda,dmax-0.166*da,strtime, fontsize=20, color = 'white',weight='bold',horizontalalignment='right')
 
         # Spot planet position in sky-plane
-        if par.spot_planet == 'Yes':
+        if (('spot_planet' in open('params.dat').read()) and (par.spot_planet == 'Yes')):
             xp = xpla[par.on] # in disc simulation plane
             yp = ypla[par.on] # in disc simulation plane
             if par.xaxisflip == 'Yes':
@@ -683,12 +686,10 @@ def produce_final_image():
             if par.add_noise == 'Yes':
                 nb_noise = 1
 
-            '''
             file = open('axiconv%d.dat' % (nb_noise),'w')
             for kk in range(par.nbpixels):
                 file.write('%s\t%s\t%s\n' % (str(rkarr[kk]),str(np.mean(convolved_intensity[kk])),str(np.std(convolved_intensity[kk]))))
             file.close()
-            '''
 
             fig = plt.figure(figsize=(8.,8.))
             ax = plt.gca()
