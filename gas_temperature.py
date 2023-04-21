@@ -36,11 +36,22 @@ def compute_gas_temperature():
         gas_temp     = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))
         gas_temp_cyl = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))
 
-        thydro = par.aspectratio*par.aspectratio*par.gas.cutemp*par.gas.rmed**(-1.0+2.0*par.flaringindex)
+        # Test if energy equation was used or not. For that, we just
+        # need to check if a file TemperatureXX.dat was written in
+        # Fargo run's directory:
+        input_file = par.dir+'/Temperature'+str(par.on)+'.dat'
 
-        for k in range(par.gas.nsec):
+        if os.path.isfile(input_file) == False:
+            thydro = par.aspectratio*par.aspectratio*par.gas.cutemp*par.gas.rmed**(-1.0+2.0*par.flaringindex)
+            for k in range(par.gas.nsec):
+                for j in range(par.gas.nver):
+                    gas_temp_cyl[j,:,k] = thydro  # only function of R (cylindrical radius)
+        # case existing gas Temperature file:
+        else:
+            thydro = Field(field='Temperature'+str(par.on)+'.dat', directory=par.dir).data  # in code units
+            thydro *= par.gas.cutemp  # (nrad,nsec) in K
             for j in range(par.gas.nver):
-                gas_temp_cyl[j,:,k] = thydro  # only function of R (cylindrical radius)
+                gas_temp_cyl[j,:,:] = thydro    # function of R and phi
 
         # Now, sweep through the spherical grid
         for j in range(par.gas.ncol):
@@ -103,122 +114,128 @@ def compute_gas_temperature():
                             TEMPOUT.write(str(gas_temp[j,i,k])+' \n')
 
         TEMPOUT.close()
+
+        if ( (par.dustsublimation == 'No') or (par.plot_dust_quantities == 'No' and par.plot_gas_quantities == 'No') ):
+            del gas_temp
         
-        # finally output plots of the gas temperature
-        if par.plot_gas_quantities == 'Yes' or par.plot_dust_quantities == 'Yes':
         
-            from mpl_toolkits.axes_grid1 import make_axes_locatable
-            import matplotlib.ticker as ticker
-            from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
+# =========================
+# Display gas temperature on RADMC 3D grid
+# =========================
+def plot_gas_temperature():
+            
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+    import matplotlib.ticker as ticker
+    from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
         
-            matplotlib.rcParams.update({'font.size': 20})
-            matplotlib.rc('font', family='Arial')
-            fontcolor='white'
+    matplotlib.rcParams.update({'font.size': 20})
+    matplotlib.rc('font', family='Arial')
+    fontcolor='white'
 
-            # azimuthally-averaged gas temperature:
-            axitemp = np.sum(gas_temp,axis=2)/par.gas.nsec
+    # azimuthally-averaged gas temperature:
+    axitemp = np.sum(gas_temp,axis=2)/par.gas.nsec
             
-            radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.tedge)
-            R = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
-            Z = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
+    radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.tedge)
+    R = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
+    Z = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
 
-            # surface gas temperature:
-            surftemp = gas_temp[par.gas.ncol-1,:,:]
+    # surface gas temperature:
+    surftemp = gas_temp[par.gas.ncol-1,:,:]
             
-            radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
-            X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
-            Y = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
+    radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
+    X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
+    Y = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
 
-            # common plot features
-            if par.gasspecies == 'co':
-                strgas = r'$^{12}$CO'
-            elif par.gasspecies == '13co':
-                strgas = r'$^{13}$CO'
-            elif par.gasspecies == 'c17o':
-                strgas = r'C$^{17}$O'
-            elif par.gasspecies == 'c18o':
-                strgas = r'C$^{18}$O'
-            else:
-                strgas = str(par.gasspecies).upper()  # capital letters
-
-            
-            print('--------- a) plotting azimuthally-averaged gas temperature (R,z) ----------')
-
-            fig = plt.figure(figsize=(8.,8.))
-            plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
-            ax = plt.gca()
-            ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
-            ax.tick_params(axis='x', which='minor', top=True)
-            ax.tick_params(axis='y', which='minor', right=True)
-
-            ax.set_xlabel('Radius [au]')
-            ax.set_ylabel('Altitude [au]')
-            ax.set_ylim(Z.min(),Z.max())
-            ax.set_xlim(R.min(),R.max())
+    # common plot features
+    if par.gasspecies == 'co':
+        strgas = r'$^{12}$CO'
+    elif par.gasspecies == '13co':
+        strgas = r'$^{13}$CO'
+    elif par.gasspecies == 'c17o':
+        strgas = r'C$^{17}$O'
+    elif par.gasspecies == 'c18o':
+        strgas = r'C$^{18}$O'
+    else:
+        strgas = str(par.gasspecies).upper()  # capital letters
 
             
-            mynorm = matplotlib.colors.Normalize(vmin=axitemp.min(),vmax=axitemp.max())
-            if axitemp.max() / axitemp.min() > 10:
-                mynorm = matplotlib.colors.LogNorm(vmin=axitemp.min(),vmax=axitemp.max())
+    print('--------- a) plotting azimuthally-averaged gas temperature (R,z) ----------')
 
-            CF = ax.pcolormesh(R,Z,axitemp,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+    fig = plt.figure(figsize=(8.,8.))
+    plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+    ax = plt.gca()
+    ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+    ax.tick_params(axis='x', which='minor', top=True)
+    ax.tick_params(axis='y', which='minor', right=True)
+    
+    ax.set_xlabel('Radius [au]')
+    ax.set_ylabel('Altitude [au]')
+    ax.set_ylim(Z.min(),Z.max())
+    ax.set_xlim(R.min(),R.max())
 
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("top", size="2.5%", pad=0.12)
-            cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
-            cax.xaxis.tick_top()
-            cax.xaxis.set_tick_params(labelsize=20, direction='out')
+    
+    mynorm = matplotlib.colors.Normalize(vmin=axitemp.min(),vmax=axitemp.max())
+    if axitemp.max() / axitemp.min() > 10:
+        mynorm = matplotlib.colors.LogNorm(vmin=axitemp.min(),vmax=axitemp.max())
 
-            cax.xaxis.set_label_position('top')
-            if par.RTdust_or_gas == 'gas':
-                cax.set_xlabel(strgas+' temperature '+r'[K]')
-                fileout = 'gas_temperature_Rz.pdf'
-            if par.RTdust_or_gas == 'dust':
-                cax.set_xlabel('dust temperature '+r'[K]')
-                fileout = 'dust_temperature_Rz.pdf'
-            cax.xaxis.labelpad = 8
-            
-            plt.savefig('./'+fileout, dpi=160)
-            plt.close(fig)  # close figure as we reopen figure at every output number
-            
-            
-            print('--------- b) plotting surface gas temperature (x,y) ----------')
+    CF = ax.pcolormesh(R,Z,axitemp,cmap='nipy_spectral',norm=mynorm,rasterized=True)
 
-            fig = plt.figure(figsize=(8.,8.))
-            plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
-            ax = plt.gca()
-            ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
-            ax.tick_params(axis='x', which='minor', top=True)
-            ax.tick_params(axis='y', which='minor', right=True)
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="2.5%", pad=0.12)
+    cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+    cax.xaxis.tick_top()
+    cax.xaxis.set_tick_params(labelsize=20, direction='out')
 
-            ax.set_xlabel('x [au]')
-            ax.set_ylabel('y [au]')
-            ax.set_ylim(Y.min(),Y.max())
-            ax.set_xlim(X.min(),X.max())
+    cax.xaxis.set_label_position('top')
+    if par.RTdust_or_gas == 'gas':
+        cax.set_xlabel(strgas+' temperature '+r'[K]')
+        fileout = 'gas_temperature_Rz.pdf'
+    if par.RTdust_or_gas == 'dust':
+        cax.set_xlabel('dust temperature '+r'[K]')
+        fileout = 'dust_temperature_Rz.pdf'
+    cax.xaxis.labelpad = 8
             
-            mynorm = matplotlib.colors.Normalize(vmin=surftemp.min(),vmax=surftemp.max())
-            if surftemp.max() / surftemp.min() > 10:
-                mynorm = matplotlib.colors.LogNorm(vmin=surftemp.min(),vmax=surftemp.max())
+    plt.savefig('./'+fileout, dpi=160)
+    plt.close(fig)  # close figure as we reopen figure at every output number
             
-            surftemp = np.transpose(surftemp)
-            CF = ax.pcolormesh(X,Y,surftemp,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+            
+    print('--------- b) plotting surface gas temperature (x,y) ----------')
 
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("top", size="2.5%", pad=0.12)
-            cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
-            cax.xaxis.tick_top()
-            cax.xaxis.set_tick_params(labelsize=20, direction='out')
+    fig = plt.figure(figsize=(8.,8.))
+    plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+    ax = plt.gca()
+    ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+    ax.tick_params(axis='x', which='minor', top=True)
+    ax.tick_params(axis='y', which='minor', right=True)
 
-            cax.xaxis.set_label_position('top')
-            if par.RTdust_or_gas == 'gas':
-                cax.set_xlabel(strgas+' surface temperature '+r'[K]')
-                fileout = 'gas_temperature_surface.pdf'
-            if par.RTdust_or_gas == 'dust':
-                cax.set_xlabel('dust surface temperature '+r'[K]')
-                fileout = 'dust_temperature_surface.pdf'                
-            cax.xaxis.labelpad = 8
+    ax.set_xlabel('x [au]')
+    ax.set_ylabel('y [au]')
+    ax.set_ylim(Y.min(),Y.max())
+    ax.set_xlim(X.min(),X.max())
             
-            plt.savefig('./'+fileout, dpi=160)
-            plt.close(fig)  # close figure as we reopen figure at every output number
+    mynorm = matplotlib.colors.Normalize(vmin=surftemp.min(),vmax=surftemp.max())
+    if surftemp.max() / surftemp.min() > 10:
+        mynorm = matplotlib.colors.LogNorm(vmin=surftemp.min(),vmax=surftemp.max())
             
-        del gas_temp  
+    surftemp = np.transpose(surftemp)
+    CF = ax.pcolormesh(X,Y,surftemp,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="2.5%", pad=0.12)
+    cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+    cax.xaxis.tick_top()
+    cax.xaxis.set_tick_params(labelsize=20, direction='out')
+
+    cax.xaxis.set_label_position('top')
+    if par.RTdust_or_gas == 'gas':
+        cax.set_xlabel(strgas+' surface temperature '+r'[K]')
+        fileout = 'gas_temperature_surface.pdf'
+    if par.RTdust_or_gas == 'dust':
+        cax.set_xlabel('dust surface temperature '+r'[K]')
+        fileout = 'dust_temperature_surface.pdf'                
+    cax.xaxis.labelpad = 8
+            
+    plt.savefig('./'+fileout, dpi=160)
+    plt.close(fig)  # close figure as we reopen figure at every output number
+            
+    del gas_temp  

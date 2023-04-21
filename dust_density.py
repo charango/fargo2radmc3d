@@ -415,10 +415,10 @@ def compute_dust_mass_volume_density():
         print('--------- computing dust mass surface density ----------')
         
     print('--------- computing dust mass volume density ----------')
-    DUSTOUT = open('dust_density.inp','w')
-    DUSTOUT.write('1 \n')                           # iformat  
-    DUSTOUT.write(str(par.gas.nrad*par.gas.nsec*par.gas.ncol)+' \n')        # n cells
-    DUSTOUT.write(str(int(par.nbin))+' \n')             # nbin size bins 
+    DUSTOUT = open('dust_density.binp','wb')        # binary format
+    # requested header
+    hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol, par.nbin], dtype=int)
+    hdr.tofile(DUSTOUT)
     
     # array (ncol, nbin, nrad, nsec)
     rhodustcube = np.zeros((par.gas.ncol,par.nbin,par.gas.nrad,par.gas.nsec))
@@ -510,197 +510,273 @@ def compute_dust_mass_volume_density():
         if par.verbose == 'Yes':
             print('total dust mass after vertical expansion [g] = ', np.sum(np.sum(rhodustcube, axis=1)*vol), ' as normalization factor = ', normalization_factor)
 
-            
+
     # finally write mass volume densities for all size bins
     for ibin in range(par.nbin):
         print('dust species in bin', ibin, 'out of ',par.nbin-1)
         for k in range(par.gas.nsec):
             for j in range(par.gas.ncol):
                 for i in range(par.gas.nrad):
-                    DUSTOUT.write(str(rhodustcube[j,ibin,i,k])+' \n')
+                    # simple model for dust sublimation in case the
+                    # dust temperature simply equals that in the hydro
+                    # simulation
+                    if par.dustsublimation == 'Yes' and par.Tdust_eq_Thydro == 'Yes' and gas_temp[j,i,k] > 1500.0:
+                        rhodustcube[j,ibin,i,k] *= 1e-5
+
+    rhodustcube.tofile(DUSTOUT)
+    DUSTOUT.close()
 
     # print max of dust's mass volume density at each colatitude
     if par.verbose == 'Yes':
         for j in range(par.gas.ncol):
             print('max(rho_dustcube) [g cm-3] for colatitude index j = ', j, ' = ', rhodustcube[j,:,:,:].max())
 
+    # free RAM memory
+    del rhodustcube, dustcube, hd2D, r2D
+    
+
+# =========================
+# compute again dust density in case dust sublimation is taken into
+# account
+# =========================
+def recompute_dust_mass_volume_density():
+
+    # Start by reading dust temperature. Note that the .bdat file can
+    # be produced by a thermal MC run with RADMC-3D after having
+    # already computed the dust density!
+    Temp = np.fromfile('dust_temperature.bdat', dtype='float64')
+    Temp = Temp[4:]
+    Temp = Temp.reshape(par.nbin,par.gas.nsec,par.gas.ncol,par.gas.nrad) # nbin nsec ncol nrad
+
+    # Then read again dust_density.binp file
+    dens = np.fromfile('dust_density.binp', dtype='float64')
+    rhodustcube = dens[4:]
+    rhodustcube = rhodustcube.reshape(par.gas.ncol,par.nbin,par.gas.nrad,par.gas.nsec) # ncol, nbin, nrad, nsec
+    
+    for ibin in range(par.nbin):
+        print('sublimation: dust species in bin', ibin, 'out of ',par.nbin-1)
+        for k in range(par.gas.nsec):
+            for j in range(par.gas.ncol):
+                for i in range(par.gas.nrad):
+                    if Temp[ibin,k,j,i] > 1500.0:
+                        rhodustcube[j,ibin,i,k] *= 1e-5
+
+    DUSTOUT = open('dust_density.binp','wb')        # binary format
+    # requested header
+    hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol, par.nbin], dtype=int)
+    hdr.tofile(DUSTOUT)
+    rhodustcube.tofile(DUSTOUT)
     DUSTOUT.close()
 
+    del dens,rhodustcube,Temp
+    
+        
+# =========================
+# Display dust temperature on RADMC 3D grid
+# =========================
+def plot_dust_density(mystring):
+
+    dens = np.fromfile('dust_density.binp', dtype='float64')
+    rhodustcube = dens[4:]
+    rhodustcube = rhodustcube.reshape(par.gas.ncol,par.nbin,par.gas.nrad,par.gas.nsec) # ncol, nbin, nrad, nsec
+    
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+    import matplotlib.ticker as ticker
+    from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
+        
+    matplotlib.rcParams.update({'font.size': 20})
+    matplotlib.rc('font', family='Arial')
+    fontcolor='white'
     
     # plot azimuthally-averaged dust density vs. radius and colatitude for smallest and largest bin sizes
-    if par.plot_dust_quantities == 'Yes':
-        
-        from mpl_toolkits.axes_grid1 import make_axes_locatable
-        import matplotlib.ticker as ticker
-        from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
-        
-        matplotlib.rcParams.update({'font.size': 20})
-        matplotlib.rc('font', family='Arial')
-        fontcolor='white'
 
-        # azimuthally-averaged dust density:
-        axidens_smallest = np.sum(rhodustcube[:,0,:,:],axis=2)/par.gas.nsec  # (nol,nrad)
-        axidens_largest  = np.sum(rhodustcube[:,par.nbin-1,:,:],axis=2)/par.gas.nsec  # (nol,nrad)
+    # azimuthally-averaged dust density:
+    axidens_smallest = np.sum(rhodustcube[:,0,:,:],axis=2)/par.gas.nsec  # (nol,nrad)
+    axidens_largest  = np.sum(rhodustcube[:,par.nbin-1,:,:],axis=2)/par.gas.nsec  # (nol,nrad)
 
-        radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.tedge)
-        R = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
-        Z = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
+    radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.tedge)
+    R = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
+    Z = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
 
-        # midplane dust mass volume density:
-        midplane_dens_smallest = rhodustcube[par.gas.ncol//2-1,0,:,:]  # (nrad,nsec)
-        midplane_dens_largest  = rhodustcube[par.gas.ncol//2-1,par.nbin-1,:,:]  # (nrad,nsec)
+    # midplane dust mass volume density:
+    midplane_dens_smallest = rhodustcube[par.gas.ncol//2-1,0,:,:]           # (nrad,nsec)
+    midplane_dens_largest  = rhodustcube[par.gas.ncol//2-1,par.nbin-1,:,:]  # (nrad,nsec)
 
-        radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
-        X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
-        Y = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
+    radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
+    X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
+    Y = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
 
         
-        print('--------- a) plotting azimuthally-averaged dust density (R,z) ----------')
+    print('--------- a) plotting azimuthally-averaged dust density (R,z) ----------')
 
-        # --- smallest bin size ---
-        fig = plt.figure(figsize=(8.,8.))
-        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
-        ax = plt.gca()
-        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
-        ax.tick_params(axis='x', which='minor', top=True)
-        ax.tick_params(axis='y', which='minor', right=True)
+    # --- smallest bin size ---
+    fig = plt.figure(figsize=(8.,8.))
+    plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+    ax = plt.gca()
+    ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+    ax.tick_params(axis='x', which='minor', top=True)
+    ax.tick_params(axis='y', which='minor', right=True)
+    
+    ax.set_xlabel('Radius [au]')
+    ax.set_ylabel('Altitude [au]')
+    ax.set_ylim(Z.min(),Z.max())
+    ax.set_xlim(R.min(),R.max())
 
-        ax.set_xlabel('Radius [au]')
-        ax.set_ylabel('Altitude [au]')
-        ax.set_ylim(Z.min(),Z.max())
-        ax.set_xlim(R.min(),R.max())
-
-        if axidens_smallest.max()/axidens_smallest.min() > 1e3:
-            mynorm = matplotlib.colors.LogNorm(vmin=1e-3*axidens_smallest.max(),vmax=axidens_smallest.max())
-        else:
-            mynorm = matplotlib.colors.LogNorm(vmin=axidens_smallest.min(),vmax=axidens_smallest.max())
-            
-        CF = ax.pcolormesh(R,Z,axidens_smallest,cmap='nipy_spectral',norm=mynorm)
-
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("top", size="2.5%", pad=0.12)
-        cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
-        cax.xaxis.tick_top()
-        cax.xaxis.set_tick_params(labelsize=20, direction='out')
-        cax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=10))
-
-        cax.xaxis.set_label_position('top')
-        cax.set_xlabel('dust density '+r'[g cm$^{-3}$]')
-        cax.xaxis.labelpad = 8
+    if axidens_smallest.max()/axidens_smallest.min() > 1e3:
+        mynorm = matplotlib.colors.LogNorm(vmin=1e-3*axidens_smallest.max(),vmax=axidens_smallest.max())
+    else:
+        mynorm = matplotlib.colors.LogNorm(vmin=axidens_smallest.min(),vmax=axidens_smallest.max())
         
+    CF = ax.pcolormesh(R,Z,axidens_smallest,cmap='nipy_spectral',norm=mynorm)
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="2.5%", pad=0.12)
+    cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+    cax.xaxis.tick_top()
+    cax.xaxis.set_tick_params(labelsize=20, direction='out')
+    cax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=10))
+
+    cax.xaxis.set_label_position('top')
+    cax.set_xlabel('dust density '+r'[g cm$^{-3}$]')
+    cax.xaxis.labelpad = 8
+
+    if par.dustsublimation == 'No':
         fileout = 'dust_density_smallest_Rz.pdf'
-        plt.savefig('./'+fileout, dpi=160)
-        plt.close(fig) 
+    else:
+        if 'before' in mystring:
+            fileout = 'dust_density_smallest_Rz_before_subl.pdf'
+        if 'after' in mystring:
+            fileout = 'dust_density_smallest_Rz_after_subl.pdf'
+    plt.savefig('./'+fileout, dpi=160)
+    plt.close(fig) 
         
-        # --- repeat for largest bin size ---
-        fig = plt.figure(figsize=(8.,8.))
-        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
-        ax = plt.gca()
-        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
-        ax.tick_params(axis='x', which='minor', top=True)
-        ax.tick_params(axis='y', which='minor', right=True)
+    # --- repeat for largest bin size ---
+    fig = plt.figure(figsize=(8.,8.))
+    plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+    ax = plt.gca()
+    ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+    ax.tick_params(axis='x', which='minor', top=True)
+    ax.tick_params(axis='y', which='minor', right=True)
 
-        ax.set_xlabel('Radius [au]')
-        ax.set_ylabel('Altitude [au]')
-        ax.set_ylim(Z.min(),Z.max())
-        ax.set_xlim(R.min(),R.max())
+    ax.set_xlabel('Radius [au]')
+    ax.set_ylabel('Altitude [au]')
+    ax.set_ylim(Z.min(),Z.max())
+    ax.set_xlim(R.min(),R.max())
 
-        if axidens_largest.max()/axidens_largest.min() > 1e3:
-            mynorm = matplotlib.colors.LogNorm(vmin=1e-3*axidens_largest.max(),vmax=axidens_largest.max())
-        else:
-            mynorm = matplotlib.colors.LogNorm(vmin=axidens_largest.min(),vmax=axidens_largest.max())
+    if axidens_largest.max()/axidens_largest.min() > 1e3:
+        mynorm = matplotlib.colors.LogNorm(vmin=1e-3*axidens_largest.max(),vmax=axidens_largest.max())
+    else:
+        mynorm = matplotlib.colors.LogNorm(vmin=axidens_largest.min(),vmax=axidens_largest.max())
 
-        CF = ax.pcolormesh(R,Z,axidens_largest,cmap='nipy_spectral',norm=mynorm)
+    CF = ax.pcolormesh(R,Z,axidens_largest,cmap='nipy_spectral',norm=mynorm)
 
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("top", size="2.5%", pad=0.12)
-        cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
-        cax.xaxis.tick_top()
-        cax.xaxis.set_tick_params(labelsize=20, direction='out')
-        cax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=10))
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="2.5%", pad=0.12)
+    cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+    cax.xaxis.tick_top()
+    cax.xaxis.set_tick_params(labelsize=20, direction='out')
+    cax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=10))
 
-        cax.xaxis.set_label_position('top')
-        cax.set_xlabel('dust density '+r'[g cm$^{-3}$]')
-        cax.xaxis.labelpad = 8
-        
+    cax.xaxis.set_label_position('top')
+    cax.set_xlabel('dust density '+r'[g cm$^{-3}$]')
+    cax.xaxis.labelpad = 8
+
+    if par.dustsublimation == 'No':
         fileout = 'dust_density_largest_Rz.pdf'
-        plt.savefig('./'+fileout, dpi=160)
-        plt.close(fig) 
+    else:
+        if 'before' in mystring:
+            fileout = 'dust_density_largest_Rz_before_subl.pdf'
+        if 'after' in mystring:
+            fileout = 'dust_density_largest_Rz_after_subl.pdf'
+    plt.savefig('./'+fileout, dpi=160)
+    plt.close(fig) 
+    
+    print('--------- b) plotting dust density (x,y) ----------')
 
-        print('--------- b) plotting dust density (x,y) ----------')
+    # --- smallest bin size ---
+    fig = plt.figure(figsize=(8.,8.))
+    plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+    ax = plt.gca()
+    ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+    ax.tick_params(axis='x', which='minor', top=True)
+    ax.tick_params(axis='y', which='minor', right=True)
+    
+    ax.set_xlabel('x [au]')
+    ax.set_ylabel('y [au]')
+    ax.set_ylim(Y.min(),Y.max())
+    ax.set_xlim(X.min(),X.max())
+    
+    if midplane_dens_smallest.max()/midplane_dens_smallest.min() > 1e3:
+        mynorm = matplotlib.colors.LogNorm(vmin=1e-3*midplane_dens_smallest.max(),vmax=midplane_dens_smallest.max())
+    else:
+        mynorm = matplotlib.colors.LogNorm(vmin=midplane_dens_smallest.min(),vmax=midplane_dens_smallest.max())
 
-        # --- smallest bin size ---
-        fig = plt.figure(figsize=(8.,8.))
-        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
-        ax = plt.gca()
-        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
-        ax.tick_params(axis='x', which='minor', top=True)
-        ax.tick_params(axis='y', which='minor', right=True)
+    midplane_dens_smallest = np.transpose(midplane_dens_smallest)
+    CF = ax.pcolormesh(X,Y,midplane_dens_smallest,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+    #CF = ax.pcolormesh(X,Y,midplane_dens_smallest,cmap='nipy_spectral',norm=mynorm)
 
-        ax.set_xlabel('x [au]')
-        ax.set_ylabel('y [au]')
-        ax.set_ylim(Y.min(),Y.max())
-        ax.set_xlim(X.min(),X.max())
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="2.5%", pad=0.12)
+    cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+    cax.xaxis.tick_top()
+    cax.xaxis.set_tick_params(labelsize=20, direction='out')
+    
+    cax.xaxis.set_label_position('top')
+    cax.set_xlabel('midplane dust density '+r'[g cm$^{-3}$]')
+    cax.xaxis.labelpad = 8
 
-        if midplane_dens_smallest.max()/midplane_dens_smallest.min() > 1e3:
-            mynorm = matplotlib.colors.LogNorm(vmin=1e-3*midplane_dens_smallest.max(),vmax=midplane_dens_smallest.max())
-        else:
-            mynorm = matplotlib.colors.LogNorm(vmin=midplane_dens_smallest.min(),vmax=midplane_dens_smallest.max())
-
-        midplane_dens_smallest = np.transpose(midplane_dens_smallest)
-        CF = ax.pcolormesh(X,Y,midplane_dens_smallest,cmap='nipy_spectral',norm=mynorm,rasterized=True)
-        #CF = ax.pcolormesh(X,Y,midplane_dens_smallest,cmap='nipy_spectral',norm=mynorm)
-
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("top", size="2.5%", pad=0.12)
-        cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
-        cax.xaxis.tick_top()
-        cax.xaxis.set_tick_params(labelsize=20, direction='out')
-
-        cax.xaxis.set_label_position('top')
-        cax.set_xlabel('midplane dust density '+r'[g cm$^{-3}$]')
-        cax.xaxis.labelpad = 8
-        
+    if par.dustsublimation == 'No':
         fileout = 'dust_density_smallest_midplane.pdf'
-        plt.savefig('./'+fileout, dpi=160)
-        plt.close(fig)
+    else:
+        if 'before' in mystring:
+            fileout = 'dust_density_smallest_midplane_before_subl.pdf'
+        if 'after' in mystring:
+            fileout = 'dust_density_smallest_midplane_after_subl.pdf'
+    plt.savefig('./'+fileout, dpi=160)
+    plt.close(fig)
 
-        # --- repeat for largest bin size ---
-        fig = plt.figure(figsize=(8.,8.))
-        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
-        ax = plt.gca()
-        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
-        ax.tick_params(axis='x', which='minor', top=True)
-        ax.tick_params(axis='y', which='minor', right=True)
+    # --- repeat for largest bin size ---
+    fig = plt.figure(figsize=(8.,8.))
+    plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+    ax = plt.gca()
+    ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+    ax.tick_params(axis='x', which='minor', top=True)
+    ax.tick_params(axis='y', which='minor', right=True)
 
-        ax.set_xlabel('x [au]')
-        ax.set_ylabel('y [au]')
-        ax.set_ylim(Y.min(),Y.max())
-        ax.set_xlim(X.min(),X.max())
+    ax.set_xlabel('x [au]')
+    ax.set_ylabel('y [au]')
+    ax.set_ylim(Y.min(),Y.max())
+    ax.set_xlim(X.min(),X.max())
+    
+    if midplane_dens_largest.max()/midplane_dens_largest.min() > 1e3:
+        mynorm = matplotlib.colors.LogNorm(vmin=1e-3*midplane_dens_largest.max(),vmax=midplane_dens_largest.max())
+    else:
+        mynorm = matplotlib.colors.LogNorm(vmin=midplane_dens_largest.min(),vmax=midplane_dens_largest.max())
         
-        if midplane_dens_largest.max()/midplane_dens_largest.min() > 1e3:
-            mynorm = matplotlib.colors.LogNorm(vmin=1e-3*midplane_dens_largest.max(),vmax=midplane_dens_largest.max())
-        else:
-            mynorm = matplotlib.colors.LogNorm(vmin=midplane_dens_largest.min(),vmax=midplane_dens_largest.max())
+    midplane_dens_largest = np.transpose(midplane_dens_largest)
+    CF = ax.pcolormesh(X,Y,midplane_dens_largest,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+    #CF = ax.pcolormesh(X,Y,midplane_dens_largest,cmap='nipy_spectral',norm=mynorm)
 
-        midplane_dens_largest = np.transpose(midplane_dens_largest)
-        CF = ax.pcolormesh(X,Y,midplane_dens_largest,cmap='nipy_spectral',norm=mynorm,rasterized=True)
-        #CF = ax.pcolormesh(X,Y,midplane_dens_largest,cmap='nipy_spectral',norm=mynorm)
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="2.5%", pad=0.12)
+    cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+    cax.xaxis.tick_top()
+    cax.xaxis.set_tick_params(labelsize=20, direction='out')
+    
+    cax.xaxis.set_label_position('top')
+    cax.set_xlabel('midplane dust density '+r'[g cm$^{-3}$]')
+    cax.xaxis.labelpad = 8
 
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("top", size="2.5%", pad=0.12)
-        cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
-        cax.xaxis.tick_top()
-        cax.xaxis.set_tick_params(labelsize=20, direction='out')
-
-        cax.xaxis.set_label_position('top')
-        cax.set_xlabel('midplane dust density '+r'[g cm$^{-3}$]')
-        cax.xaxis.labelpad = 8
-        
+    if par.dustsublimation == 'No':
         fileout = 'dust_density_largest_midplane.pdf'
-        plt.savefig('./'+fileout, dpi=160)
-        plt.close(fig)
+    else:
+        if 'before' in mystring:
+            fileout = 'dust_density_largest_midplane_before_subl.pdf'
+        if 'after' in mystring:
+            fileout = 'dust_density_largest_midplane_after_subl.pdf'
+    plt.savefig('./'+fileout, dpi=160)
+    plt.close(fig)
 
         
     # free RAM memory
-    del rhodustcube, dustcube, hd2D, r2D
+    del rhodustcube

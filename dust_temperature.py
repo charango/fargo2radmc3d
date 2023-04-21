@@ -11,10 +11,26 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 
+def round_to_n(x, n):
+    " Round x to n significant figures "
+    return round(x, -int(np.floor(np.sign(x) * np.log10(abs(x)))) + n)
+
+def str_fmt(x, n=2):
+    " Format x into nice Latex rounding to n"
+    power = np.floor(np.log10(round_to_n(x, 0)))
+    f_SF = round_to_n(x, n) * pow(10, -power)
+    if f_SF != 1.0:
+        mystr = "$"+format(f_SF,'.1f')+r"\times 10^{"+format(power,'.0f')+"}$"
+        return mystr
+    else:
+        mystr = r"$10^{"+format(power,'.0f')+"}$"
+        return mystr
+
+
 # =========================
 # Display dust temperature on RADMC 3D grid
 # =========================
-def plot_dust_temperature():
+def plot_dust_temperature(mystring):
 
     Temp = np.fromfile('dust_temperature.bdat', dtype='float64')
     Temp = Temp[4:]
@@ -44,7 +60,7 @@ def plot_dust_temperature():
     for l in range(par.nbin):
 
         fig = plt.figure(figsize=(8.,8.))
-        plt.subplots_adjust(left=0.14, right=0.94, top=0.88, bottom=0.11)
+        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
         ax = plt.gca()
         ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
         ax.tick_params(axis='x', which='minor', top=True)
@@ -55,7 +71,7 @@ def plot_dust_temperature():
         ax.set_ylim(Z.min(),Z.max())
         ax.set_xlim(R.min(),R.max())
         
-        CF = ax.pcolormesh(R,Z,axitemp[l,:,:],cmap=par.mycolormap,norm=mynorm,rasterized=True)
+        CF = ax.pcolormesh(R,Z,axitemp[l,:,:],cmap='nipy_spectral',norm=mynorm,rasterized=True)
 
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("top", size="2.5%", pad=0.12)
@@ -69,12 +85,20 @@ def plot_dust_temperature():
         cax.xaxis.labelpad = 8
 
         # show dust size in bottom-left corner:
-        strsize = 's='+'{:0.2e}'.format(par.bins[l])+'m' # round to 2 decimals
+        # strsize = 's='+'{:0.2e}'.format(par.bins[l])+'m' # round to 2 decimals
+        strsize = str_fmt(par.bins[l])+' m'
         xstr = 1.02*R.min() 
         ystr = 0.98*Z.max() 
         ax.text(xstr,ystr,strsize, fontsize=20, color = 'black',weight='bold',horizontalalignment='left', verticalalignment='top')
+
+        if par.dustsublimation == 'No':
+            fileout = 'dustRz_temperature_'+str(l).zfill(2)+'.pdf'
+        else:
+            if 'before' in mystring:
+                fileout = 'dustRz_temperature_'+str(l).zfill(2)+'_before_subl.pdf'
+            if 'after' in mystring:
+                fileout = 'dustRz_temperature_'+str(l).zfill(2)+'_after_subl.pdf'
         
-        fileout = 'dustRz_temperature_'+str(l).zfill(2)+'.pdf'
         plt.savefig('./'+fileout, dpi=160)
         plt.close(fig)  # close figure as we reopen figure at every output number
 
@@ -92,7 +116,7 @@ def plot_dust_temperature():
     for l in range(par.nbin):
 
         fig = plt.figure(figsize=(8.,8.))
-        plt.subplots_adjust(left=0.14, right=0.94, top=0.88, bottom=0.11)
+        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
         ax = plt.gca()
         ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
         ax.tick_params(axis='x', which='minor', top=True)
@@ -103,7 +127,7 @@ def plot_dust_temperature():
         ax.set_ylim(Y.min(),Y.max())
         ax.set_xlim(X.min(),X.max())
                
-        CF = ax.pcolormesh(X,Y,surftemp[l,:,:],cmap=par.mycolormap,norm=mynorm,rasterized=True)
+        CF = ax.pcolormesh(X,Y,surftemp[l,:,:],cmap='nipy_spectral',norm=mynorm,rasterized=True)
 
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("top", size="2.5%", pad=0.12)
@@ -113,16 +137,24 @@ def plot_dust_temperature():
 
         # title on top
         cax.xaxis.set_label_position('top')
-        cax.set_xlabel('dust temperature '+r'[K]')
+        cax.set_xlabel('dust surface temperature '+r'[K]')
         cax.xaxis.labelpad = 8
 
         # show dust size in bottom-left corner:
-        strsize = 's='+'{:0.2e}'.format(par.bins[l])+'m' # round to 2 decimals
+        #strsize = 's='+'{:0.2e}'.format(par.bins[l])+'m' # round to 2 decimals
+        strsize = str_fmt(par.bins[l])+' m'
         xstr = 0.98*X.min() 
         ystr = 0.98*Y.max() 
         ax.text(xstr,ystr,strsize, fontsize=20, color = 'black',weight='bold',horizontalalignment='left', verticalalignment='top')
+
+        if par.dustsublimation == 'No':
+            fileout = 'dustsurface_temperature_'+str(l).zfill(2)+'.pdf'
+        else:
+            if 'before' in mystring:
+                fileout = 'dustsurface_temperature_'+str(l).zfill(2)+'_before_subl.pdf'
+            if 'after' in mystring:
+                fileout = 'dustsurface_temperature_'+str(l).zfill(2)+'_after_subl.pdf'
         
-        fileout = 'dustsurface_temperature_'+str(l).zfill(2)+'.pdf'
         plt.savefig('./'+fileout, dpi=160)
         plt.close(fig)  # close figure as we reopen figure at every output number
 
