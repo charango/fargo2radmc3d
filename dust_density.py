@@ -417,6 +417,10 @@ def compute_dust_mass_volume_density():
     print('--------- computing dust mass volume density ----------')
     DUSTOUT = open('dust_density.binp','wb')        # binary format
     # requested header
+    # hdr[0] = format number
+    # hdr[1] = data precision (8 means double)
+    # hdr[2] = nb of grid cells
+    # hdr[3] = nb of dust bins
     hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol, par.nbin], dtype=int)
     hdr.tofile(DUSTOUT)
     
@@ -521,15 +525,21 @@ def compute_dust_mass_volume_density():
                     # dust temperature simply equals that in the hydro
                     # simulation
                     if par.dustsublimation == 'Yes' and par.Tdust_eq_Thydro == 'Yes' and gas_temp[j,i,k] > 1500.0:
-                        rhodustcube[j,ibin,i,k] *= 1e-5
-
-    rhodustcube.tofile(DUSTOUT)
-    DUSTOUT.close()
+                        rhodustcube[j,ibin,i,k] *= 1e-5   # ncol nbin nrad nsec
 
     # print max of dust's mass volume density at each colatitude
     if par.verbose == 'Yes':
         for j in range(par.gas.ncol):
             print('max(rho_dustcube) [g cm-3] for colatitude index j = ', j, ' = ', rhodustcube[j,:,:,:].max())
+                        
+    # If writing data in an ascii file the ordering should be: nbin, nsec, ncol, nrad.
+    # We therefore need to swap axes of array rhodustcube
+    # before dumping it in a binary file! just like mastermind game!
+    rhodustcube = np.swapaxes(rhodustcube, 2, 3)  # ncol nbin nsec nrad
+    rhodustcube = np.swapaxes(rhodustcube, 0, 1)  # nbin ncol nsec nrad
+    rhodustcube = np.swapaxes(rhodustcube, 1, 2)  # nbin nsec ncol nrad
+    rhodustcube.tofile(DUSTOUT)
+    DUSTOUT.close()
 
     # free RAM memory
     del rhodustcube, dustcube, hd2D, r2D
@@ -551,7 +561,7 @@ def recompute_dust_mass_volume_density():
     # Then read again dust_density.binp file
     dens = np.fromfile('dust_density.binp', dtype='float64')
     rhodustcube = dens[4:]
-    rhodustcube = rhodustcube.reshape(par.gas.ncol,par.nbin,par.gas.nrad,par.gas.nsec) # ncol, nbin, nrad, nsec
+    rhodustcube = rhodustcube.reshape(par.nbin,par.gas.nsec,par.gas.ncol,par.gas.nrad) # nbin nsec ncol nrad
     
     for ibin in range(par.nbin):
         print('sublimation: dust species in bin', ibin, 'out of ',par.nbin-1)
@@ -559,10 +569,9 @@ def recompute_dust_mass_volume_density():
             for j in range(par.gas.ncol):
                 for i in range(par.gas.nrad):
                     if Temp[ibin,k,j,i] > 1500.0:
-                        rhodustcube[j,ibin,i,k] *= 1e-5
+                        rhodustcube[ibin,k,j,i] *= 1e-5   
 
     DUSTOUT = open('dust_density.binp','wb')        # binary format
-    # requested header
     hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol, par.nbin], dtype=int)
     hdr.tofile(DUSTOUT)
     rhodustcube.tofile(DUSTOUT)
@@ -578,7 +587,12 @@ def plot_dust_density(mystring):
 
     dens = np.fromfile('dust_density.binp', dtype='float64')
     rhodustcube = dens[4:]
-    rhodustcube = rhodustcube.reshape(par.gas.ncol,par.nbin,par.gas.nrad,par.gas.nsec) # ncol, nbin, nrad, nsec
+    rhodustcube = rhodustcube.reshape(par.nbin,par.gas.nsec,par.gas.ncol,par.gas.nrad) # nbin nsec ncol nrad
+
+    # Let's reswap axes! -> ncol, nbin, nrad, nsec
+    rhodustcube = np.swapaxes(rhodustcube, 0, 1)  # nsec nbin ncol nrad
+    rhodustcube = np.swapaxes(rhodustcube, 0, 2)  # ncol nbin nsec nrad
+    rhodustcube = np.swapaxes(rhodustcube, 2, 3)  # ncol nbin nrad nrad
     
     from mpl_toolkits.axes_grid1 import make_axes_locatable
     import matplotlib.ticker as ticker

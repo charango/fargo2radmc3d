@@ -111,7 +111,7 @@ def compute_gas_temperature():
                 for k in range(par.gas.nsec):
                     for j in range(par.gas.ncol):
                         for i in range(par.gas.nrad):
-                            TEMPOUT.write(str(gas_temp[j,i,k])+' \n')
+                            TEMPOUT.write(str(gas_temp[j,i,k])+' \n')   # order: nbin, nsec, ncol, nrad
 
         TEMPOUT.close()
 
