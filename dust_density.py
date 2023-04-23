@@ -444,7 +444,6 @@ def compute_dust_mass_volume_density():
                 mysize = par.dust_size[par.dustfluids[0]-1+ibin]
             else:
                 mysize = par.bins[ibin]
-            print('mysize = ', mysize)
             Stokes_fargo3d[ibin,:] = 0.5*np.pi*(mysize*1e2)*par.dust_internal_density/axirhogas  # since dust size is in meters...
             #print('max Stokes number = ', Stokes_fargo3d[ibin,:].max())
             
@@ -514,18 +513,18 @@ def compute_dust_mass_volume_density():
         if par.verbose == 'Yes':
             print('total dust mass after vertical expansion [g] = ', np.sum(np.sum(rhodustcube, axis=1)*vol), ' as normalization factor = ', normalization_factor)
 
-
-    # finally write mass volume densities for all size bins
-    for ibin in range(par.nbin):
-        print('dust species in bin', ibin, 'out of ',par.nbin-1)
+    # Simple dust sublimation model in case dust temperature set to
+    # that of the hydro simulation:
+    if par.dustsublimation == 'Yes' and par.Tdust_eq_Thydro == 'Yes':
         for k in range(par.gas.nsec):
             for j in range(par.gas.ncol):
                 for i in range(par.gas.nrad):
                     # simple model for dust sublimation in case the
                     # dust temperature simply equals that in the hydro
                     # simulation
-                    if par.dustsublimation == 'Yes' and par.Tdust_eq_Thydro == 'Yes' and gas_temp[j,i,k] > 1500.0:
-                        rhodustcube[j,ibin,i,k] *= 1e-5   # ncol nbin nrad nsec
+                    if gas_temp[j,i,k] > 1500.0:
+                        rhodustcube[j,:,i,k] *= 1e-5
+        del gas_temp
 
     # print max of dust's mass volume density at each colatitude
     if par.verbose == 'Yes':

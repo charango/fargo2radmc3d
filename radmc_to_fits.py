@@ -214,11 +214,10 @@ def exportfits():
     # - - - - - -
     if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'No':
         im = images.reshape(im_ny,im_nx)
-        # sometimes the intensity has a value at the origin that
-        # is unrealistically large. We put it to zero at the
-        # origin, as it should be in our disc model!
-        im[im_ny//2,im_nx//2] = 0.0
-        im[im_ny//2+1,im_nx//2+1] = 0.0
+        # sometimes the intensity has a value at the origin that is
+        # unrealistically large. We put it to zero at the origin, as
+        # it should be in our disc model! (3pix x 3pix around)
+        im[im_ny//2-1:im_ny//2+1,im_nx//2-1:im_nx//2+1] = 0.0
 
     # - - - - - -
     # dust polarized RT calculations

@@ -13,7 +13,7 @@
 # =================================
 #            TO DO LIST
 # =================================
-# - write number density in binary format for gas RT calc
+# - write gas T and vel in binary format for gas RT calc
 # - add text banner with 'banner' command
 # - results from actual 3D simulations from Fargo3D (check
 # fargo2python): check latitude expression in mesh.py
@@ -46,7 +46,7 @@ if par.RTdust_or_gas == 'dust':
             print('--------- I did not compute dust temperature (recalc_dust_temperature = No in params.dat file) ----------')
         if par.plot_dust_quantities == 'Yes':
             print('--------- Plotting dust "hydro" temperature ----------')
-            plot_gas_temperature('')
+            plot_gas_temperature()
     
     # 2. We then compute the dust mass volume density
     if par.recalc_dust_density == 'Yes':
@@ -67,8 +67,8 @@ if par.RTdust_or_gas == 'dust':
             plot_dust_density('')
             
     # 3. Calculation of dust opacities follows
+    from dust_opacities import *
     if par.recalc_opac == 'Yes':
-        from dust_opacities import *
         print('--------- Computing dust opacities ----------')
         compute_dust_opacities()
     else:

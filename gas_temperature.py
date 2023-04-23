@@ -20,19 +20,26 @@ def compute_gas_temperature():
     if par.Tdust_eq_Thydro == 'Yes':
 
         if par.RTdust_or_gas == 'gas':
-            print('--------- writing temperature.inp file (no mctherm) ----------')
-            TEMPOUT = open('gas_temperature.inp','w')
-            TEMPOUT.write('1 \n')                           # iformat
-            TEMPOUT.write(str(par.gas.nrad*par.gas.nsec*par.gas.ncol)+' \n')        # n cells
-
+            print('--------- writing gas_temperature.binp file (no mctherm) ----------')
+            TEMPOUT = open('gas_temperature.binp','wb')
+            # requested header
+            # hdr[0] = format number
+            # hdr[1] = data precision (8 means double)
+            # hdr[2] = nb of grid cells
+            hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol], dtype=int)
+            hdr.tofile(TEMPOUT)
+            
         if par.RTdust_or_gas == 'dust':
-            print('--------- Writing temperature file (no mctherm) ----------')
-            os.system('rm -f dust_temperature.bdat')        # avoid confusion!...
-            TEMPOUT = open('dust_temperature.dat','w')       
-            TEMPOUT.write('1 \n')                           # iformat
-            TEMPOUT.write(str(par.gas.nrad*par.gas.nsec*par.gas.ncol)+' \n')        # n cells
-            TEMPOUT.write(str(int(par.nbin))+' \n')             # nbin size bins 
-
+            print('--------- Writing dust_temperature.bdat file (no mctherm) ----------')
+            TEMPOUT = open('dust_temperature.bdat','wb')
+            # requested header
+            # hdr[0] = format number
+            # hdr[1] = data precision (8 means double)
+            # hdr[2] = nb of grid cells
+            # hdr[3] = nb of dust bins
+            hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol, par.nbin], dtype=int)
+            hdr.tofile(TEMPOUT)
+            
         gas_temp     = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))
         gas_temp_cyl = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))
 
@@ -99,31 +106,58 @@ def compute_gas_temperature():
 
         # Finally write temperature file
         if par.RTdust_or_gas == 'gas':
-            for k in range(par.gas.nsec):
-                for j in range(par.gas.ncol):
-                    for i in range(par.gas.nrad):
-                        TEMPOUT.write(str(gas_temp[j,i,k])+' \n')
+            # If writing data in an ascii file the ordering should be: nsec, ncol, nrad.
+            # We therefore need to swap axes of array rhodustcube
+            # before dumping it in a binary file! just like mastermind game!
+            gas_temp = np.swapaxes(gas_temp, 0, 1)  # nrad ncol nsec
+            gas_temp = np.swapaxes(gas_temp, 0, 2)  # nsec ncol nrad
+            gas_temp.tofile(TEMPOUT)
+            TEMPOUT.close()
             
         if par.RTdust_or_gas == 'dust':
-            # write dust temperature for all size bins
+            # Define 4D dust temperature array
+            dust_temp = np.zeros((par.gas.ncol,par.nbin,par.gas.nrad,par.gas.nsec))
             for ibin in range(par.nbin):
-                print('writing temperature of dust species in bin', ibin, 'out of ',par.nbin-1)
-                for k in range(par.gas.nsec):
-                    for j in range(par.gas.ncol):
-                        for i in range(par.gas.nrad):
-                            TEMPOUT.write(str(gas_temp[j,i,k])+' \n')   # order: nbin, nsec, ncol, nrad
-
-        TEMPOUT.close()
-
-        if ( (par.dustsublimation == 'No') or (par.plot_dust_quantities == 'No' and par.plot_gas_quantities == 'No') ):
-            del gas_temp
+                dust_temp[:,ibin,:,:] = gas_temp
+            # If writing data in an ascii file the ordering should be: nbin, nsec, ncol, nrad.
+            # We therefore need to swap axes of array rhodustcube
+            # before dumping it in a binary file! just like mastermind game!
+            dust_temp = np.swapaxes(dust_temp, 2, 3)  # ncol nbin nsec nrad
+            dust_temp = np.swapaxes(dust_temp, 0, 1)  # nbin ncol nsec nrad
+            dust_temp = np.swapaxes(dust_temp, 1, 2)  # nbin nsec ncol nrad
+            dust_temp.tofile(TEMPOUT)
+            TEMPOUT.close()
+        
+        del dust_temp    
         
         
 # =========================
 # Display gas temperature on RADMC 3D grid
 # =========================
 def plot_gas_temperature():
-            
+
+    if par.RTdust_or_gas == 'dust':
+        buf = np.fromfile('dust_temperature.bdat', dtype='float64')
+        buf = buf[4:]
+        buf = buf.reshape(par.nbin,par.gas.nsec,par.gas.ncol,par.gas.nrad) # nbin nsec ncol nrad
+
+        # Let's reswap axes! -> ncol, nbin, nrad, nsec
+        buf = np.swapaxes(buf, 0, 1)  # nsec nbin ncol nrad
+        buf = np.swapaxes(buf, 0, 2)  # ncol nbin nsec nrad
+        buf = np.swapaxes(buf, 2, 3)  # ncol nbin nrad nrad
+
+        gas_temp = buf[:,0,:,:]
+
+    if par.RTdust_or_gas == 'gas':
+        gas_temp = np.fromfile('gas_temperature.binp', dtype='float64')
+        gas_temp = gas_temp[4:]
+        gas_temp = gas_temp.reshape(par.gas.nsec,par.gas.ncol,par.gas.nrad) # nbin nsec ncol nrad
+
+        # Let's reswap axes! -> ncol, nrad, nsec
+        gas_temp = np.swapaxes(gas_temp, 0, 1)  # ncol nsec nrad
+        gas_temp = np.swapaxes(gas_temp, 1, 2)  # ncol nrad nsec
+        
+        
     from mpl_toolkits.axes_grid1 import make_axes_locatable
     import matplotlib.ticker as ticker
     from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
@@ -238,4 +272,4 @@ def plot_gas_temperature():
     plt.savefig('./'+fileout, dpi=160)
     plt.close(fig)  # close figure as we reopen figure at every output number
             
-    del gas_temp  
+    del buf
