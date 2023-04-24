@@ -13,14 +13,19 @@ import matplotlib.pyplot as plt
 # Microturbulent line broadening
 # =========================
 def write_gas_microturb():
-    
-    MTURB = open('microturbulence.inp','w')
-    MTURB.write('1 \n')                           # iformat
-    MTURB.write(str(par.gas.nrad*par.gas.nsec*par.gas.ncol)+' \n')        # n cells
 
-    microturb = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))
+    MTURB = open('microturbulence.binp','wb')
+    # requested header
+    # hdr[0] = format number
+    # hdr[1] = data precision (8 means double)
+    # hdr[2] = nb of grid cells
+    hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol], dtype=int)
+    hdr.tofile(MTURB)
 
-    if par.turbvel == 'cavity':
+    # Default case: uniform microturbulence set by 'turbvel' parameter in params.dat
+    microturb = np.ones((par.gas.ncol,par.gas.nrad,par.gas.nsec))*par.turbvel*1.0e2  # ncol, nrad, nsec in cm/s
+
+    if par.turbvel == 'cavity':  # Baruteau et al. 2021 model
         for k in range(par.gas.nsec):
             for j in range(par.gas.ncol):
                 for i in range(par.gas.nrad):
@@ -30,17 +35,15 @@ def write_gas_microturb():
                         myalpha = 3e-4   # outside cavity
                     # v_turb ~ sqrt(alpha) x isothermal sound speed
                     microturb[j,i,k] = np.sqrt(myalpha * par.kB * gas_temp[j,i,k] / 2.3 / par.mp)  
-                    MTURB.write(str(microturb[j,i,k])+' \n')
         if par.verbose:
             print('min and max of microturbulent velocity in cm/s = ',microturb.min(),microturb.max())
 
-    else:
-        for k in range(par.gas.nsec):
-            for j in range(par.gas.ncol):
-                for i in range(par.gas.nrad):
-                    microturb[j,i,k] = par.turbvel*1.0e2          # ncol, nrad, nsec in cm/s
-                    MTURB.write(str(microturb[j,i,k])+' \n')
-
+    # If writing data in an ascii file the ordering should be: nsec, ncol, nrad.
+    # We therefore need to swap axes of array microturb
+    # before dumping it in a binary file! just like mastermind game!
+    microturb = np.swapaxes(microturb, 0, 1)  # nrad ncol nsec
+    microturb = np.swapaxes(microturb, 0, 2)  # nsec ncol nrad
+    microturb.tofile(MTURB)
     MTURB.close()
 
 
@@ -128,15 +131,39 @@ def compute_gas_velocity():
 
                     
     print('--------- writing gas_velocity.inp file ----------')
-    GASVEL = open('gas_velocity.inp','w')
-    GASVEL.write('1 \n')                           # iformat
-    GASVEL.write(str(par.gas.nrad*par.gas.nsec*par.gas.ncol)+' \n')        # n cells
+
+    # Define gas velocity array that contains all three components
+    gasvel = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec,3))
+    gasvel[:,:,:,0] = vrad3D
+    gasvel[:,:,:,1] = vtheta3D
+    gasvel[:,:,:,2] = vphi3D
+
+    VELOUT = open('gas_velocity.binp','wb')
+    # requested header
+    # hdr[0] = format number
+    # hdr[1] = data precision (8 means double)
+    # hdr[2] = nb of grid cells
+    hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol], dtype=int)
+    hdr.tofile(VELOUT)
+    
+    # If writing data in an ascii file the ordering should be: nsec, ncol, nrad
+    # We therefore need to swap axes of array gasvel
+    # before dumping it in a binary file! just like mastermind game!
+    gasvel = np.swapaxes(gasvel, 0, 1)  # nrad ncol nsec
+    gasvel = np.swapaxes(gasvel, 0, 2)  # nsec ncol nrad
+    gasvel.tofile(VELOUT)
+    VELOUT.close()
+    
+    '''
+    VELOUT = open('gas_velocity.inp','w')
+    VELOUT.write('1 \n')                           # iformat
+    VELOUT.write(str(par.gas.nrad*par.gas.nsec*par.gas.ncol)+' \n')        # n cells
     for k in range(par.gas.nsec):
         for j in range(par.gas.ncol):
             for i in range(par.gas.nrad):
                 GASVEL.write(str(vrad3D[j,i,k])+' '+str(vtheta3D[j,i,k])+' '+str(vphi3D[j,i,k])+' \n')
-    GASVEL.close()
-
+    VELOUT.close()
+    '''
 
     # finally output plots of the gas temperature
     if par.plot_gas_quantities == 'Yes':

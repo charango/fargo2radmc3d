@@ -31,22 +31,28 @@ def compute_gas_mass_volume_density():
         axirhogas = np.sum(gascube,axis=1)/par.gas.nsec  # in code units
         for i in range(par.gas.nrad):
             gascube[i,:] = axirhogas[i]
-                    
-    GASOUT = open('numberdens_%s.inp'%par.gasspecies,'w')
-    GASOUT.write('1 \n')                                  # iformat
-    GASOUT.write(str(par.gas.nrad*par.gas.nsec*par.gas.ncol)+' \n')   # n cells
+
+    # Binary output files
+    GASOUT = open('numberdens_%s.binp'%par.gasspecies,'wb')    # binary format
+
+    # requested header
+    hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol], dtype=int)
+    hdr.tofile(GASOUT)
 
     if par.lines_mode > 1:
-        GASOUTH2 = open('numberdens_h2.inp','w')
-        GASOUTH2.write('1 \n')                                 # iformat
-        GASOUTH2.write(str(par.gas.nrad*par.gas.nsec*par.gas.ncol)+' \n')  # n cells
+        GASOUTH2 = open('numberdens_h2.binp','wb')    # binary format
+        # requested header
+        hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol], dtype=int)
+        hdr.tofile(GASOUTH2)
 
-    # array (ncol, nrad, nsec)
+        
+    # Allocate arrays
     rhogascubeh2     = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))      # H2
     rhogascubeh2_cyl = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))
     rhogascube       = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))      # gas species (eg, CO...)
     rhogascube_cyl   = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))
 
+    
     # gas aspect ratio as function of r (or actually, R, cylindrical radius)
     hgas = par.aspectratio * (par.gas.rmed)**(par.flaringindex)
     hg2D = np.zeros((par.gas.nrad,par.gas.nsec))
@@ -55,6 +61,7 @@ def compute_gas_mass_volume_density():
         hg2D[:,th] = hgas     # nrad, nsec
         r2D[:,th] = par.gas.rmed  # nrad, nsec
 
+        
     # work out vertical expansion. First, for the array in cylindrical coordinates
     for j in range(par.gas.nver):
         rhogascubeh2_cyl[j,:,:] = gascube * np.exp( -0.5*(par.gas.zmed[j]/hg2D/r2D)**2.0 )  # nver, nrad, nsec
@@ -63,22 +70,40 @@ def compute_gas_mass_volume_density():
     # multiply by constant abundance ratio
     rhogascube_cyl = rhogascubeh2_cyl*par.abundance
 
+    
     # Simple model for photodissociation: drop
     # number density by 5 orders of magnitude if 1/2
     # erfc(z/sqrt(2)H) x Sigma_gas / mu m_p < 1e21 cm^-2
-    if (par.photodissociation == 'Yes' or par.freezeout == 'Yes'):
+    if par.photodissociation == 'Yes':
+        print('--------- apply photodissociation model (beware, may take some time...) ----------')
         for k in range(par.gas.nsec):
             for j in range(par.gas.nver):
                 for i in range(par.gas.nrad):
                     # all relevant quantities below are in in cgs
                     chip = 0.5 *  math.erfc(par.gas.zmed[j]/np.sqrt(2.0)/hgas[i]/par.gas.rmed[i]) * gascube[i,k] / (2.3*par.mp)
                     chim = 0.5 * math.erfc(-par.gas.zmed[j]/np.sqrt(2.0)/hgas[i]/par.gas.rmed[i]) * gascube[i,k] / (2.3*par.mp)
-                    if (par.photodissociation == 'Yes' and (chip < 1e21 or chim < 1e21)):
-                        rhogascube_cyl[j,i,k] *= 1e-5
-                # Simple modelling of freezeout: drop CO number density
-                    if par.freezeout == 'Yes' and gas_temp_cyl[j,i,k] < 19.0:
+                    if (chip < 1e21 or chim < 1e21):
                         rhogascube_cyl[j,i,k] *= 1e-5
 
+        
+    # Simple modelling of freezeout: drop CO number density whereever
+    # azimuthally-averaged gas temperature falls below 19K:
+    if par.freezeout == 'Yes':
+        print('--------- apply freezeout model ----------')
+        buf = np.fromfile('gas_tempcyl.binp', dtype='float64')
+        buf = buf[3:]
+        gas_temp_cyl = buf.reshape(par.gas.nver,par.gas.nrad,par.gas.nsec) # nver nrad nsec
+
+        axitemp = np.sum(gas_temp_cyl,axis=2)/par.gas.nsec  # nver nrad
+        for j in range(par.gas.nver):
+            for i in range(par.gas.nrad):
+                if axitemp[j,i] < 19.0:
+                    rhogascube_cyl[j,i,:] *= 1e-5
+
+        os.system('rm -f gas_tempcyl.binp')
+        del buf, gas_temp_cyl
+
+        
     # then, sweep through the spherical grid
     for j in range(par.gas.ncol):
         for i in range(par.gas.nrad):
@@ -130,17 +155,14 @@ def compute_gas_mass_volume_density():
                 rhogascubeh2[j,i,:] = rhogascubeh2_cyl[jcyl,icyl,:]
 
 
-    print('--------- writing numberdens.inp file ----------')
-    for k in range(par.gas.nsec):
-        for j in range(par.gas.ncol):
-            for i in range(par.gas.nrad):
-                GASOUT.write(str(rhogascube[j,i,k])+' \n')
-                if par.lines_mode > 1:
-                    GASOUTH2.write(str(rhogascubeh2[j,i,k])+' \n')
+    print('--------- writing numberdens.binp file ----------')
+    rhogascube.tofile(GASOUT)
     GASOUT.close()
+    
     if par.lines_mode > 1:
+        rhogascubeh2.tofile(GASOUTH2)
         GASOUTH2.close()
-
+        
         
     # plot azimuthally-averaged density vs. radius and colatitude
     if par.plot_gas_quantities == 'Yes':

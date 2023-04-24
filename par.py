@@ -285,86 +285,90 @@ if not('dustdens_eq_gasdens' in open('params.dat').read()):
     dustdens_eq_gasdens = 'No'
 
     
-# Set of parameters that we only need to read or specify if radmc3d is run
-if recalc_radmc == 'Yes':    
-    # get the aspect ratio and flaring index used in the numerical simulation
-    # note that this works both for Dusty FARGO-ADSG and FARGO3D simulations
-    command = 'gawk " BEGIN{IGNORECASE=1} /^AspectRatio/ " '+dir+'/*.par'
-    # check which version of python we're using
-    if sys.version_info[0] < 3:   # python 2.X
-        buf = subprocess.check_output(command, shell=True)
-    else:                         # python 3.X
-        buf = subprocess.getoutput(command)
-    aspectratio = float(buf.split()[1])
+# Set of parameters that we only need to read or specify even if radmc3d is not called
+# get the aspect ratio and flaring index used in the numerical simulation
+# note that this works both for Dusty FARGO-ADSG and FARGO3D simulations
+command = 'gawk " BEGIN{IGNORECASE=1} /^AspectRatio/ " '+dir+'/*.par'
+# check which version of python we're using
+if sys.version_info[0] < 3:   # python 2.X
+    buf = subprocess.check_output(command, shell=True)
+else:                         # python 3.X
+    buf = subprocess.getoutput(command)
+aspectratio = float(buf.split()[1])
 
-    # get the flaring index used in the numerical simulation
-    # note that this works both for Dusty FARGO-ADSG and FARGO3D simulations
-    command = 'gawk " BEGIN{IGNORECASE=1} /^FlaringIndex/ " '+dir+'/*.par'
-    if sys.version_info[0] < 3:
-        buf = subprocess.check_output(command, shell=True)
-    else:
-        buf = subprocess.getoutput(command)
-    flaringindex = float(buf.split()[1])
+# get the flaring index used in the numerical simulation
+# note that this works both for Dusty FARGO-ADSG and FARGO3D simulations
+command = 'gawk " BEGIN{IGNORECASE=1} /^FlaringIndex/ " '+dir+'/*.par'
+if sys.version_info[0] < 3:
+    buf = subprocess.check_output(command, shell=True)
+else:
+    buf = subprocess.getoutput(command)
+flaringindex = float(buf.split()[1])
     
-    # get the alpha viscosity used in the numerical simulation
-    if fargo3d == 'No':
-        try:
-            command = 'awk " /^AlphaViscosity/ " '+dir+'/*.par'
-            if sys.version_info[0] < 3:
-                buf = subprocess.check_output(command, shell=True)
-            else:
-                buf = subprocess.getoutput(command)
-            alphaviscosity = float(buf.split()[1])
-    # if no alphaviscosity, then try to see if a constant
-    # kinematic viscosity has been used in the simulation
-        except IndexError:
-            command = 'awk " /^Viscosity/ " '+dir+'/*.par'
-            if sys.version_info[0] < 3:
-                buf = subprocess.check_output(command, shell=True)
-            else:
-                buf = subprocess.getoutput(command)
-            viscosity = float(buf.split()[1])
-            # simply set constant alpha value as nu / h^2 (ok at code's unit of length)
-            alphaviscosity = viscosity * (aspectratio**(-2.0))
-    if fargo3d == 'Yes':
-        try:
-            command = 'awk " /^ALPHA/ " '+dir+'/*.par'
-            if sys.version_info[0] < 3:
-                buf = subprocess.check_output(command, shell=True)
-            else:
-                buf = subprocess.getoutput(command)
-            alphaviscosity = float(buf.split()[1])
-    # if no alphaviscosity, then try to see if a constant
-    # kinematic viscosity has been used in the simulation
-        except IndexError:
+# get the alpha viscosity used in the numerical simulation
+if fargo3d == 'No':
+    try:
+        command = 'awk " /^AlphaViscosity/ " '+dir+'/*.par'
+        if sys.version_info[0] < 3:
+            buf = subprocess.check_output(command, shell=True)
+        else:
+            buf = subprocess.getoutput(command)
+        alphaviscosity = float(buf.split()[1])
+# if no alphaviscosity, then try to see if a constant
+# kinematic viscosity has been used in the simulation
+    except IndexError:
+        command = 'awk " /^Viscosity/ " '+dir+'/*.par'
+        if sys.version_info[0] < 3:
+            buf = subprocess.check_output(command, shell=True)
+        else:
+            buf = subprocess.getoutput(command)
+        viscosity = float(buf.split()[1])
+        # simply set constant alpha value as nu / h^2 (ok at code's unit of length)
+        alphaviscosity = viscosity * (aspectratio**(-2.0))
+if fargo3d == 'Yes':
+    try:
+        command = 'awk " /^ALPHA/ " '+dir+'/*.par'
+        if sys.version_info[0] < 3:
+            buf = subprocess.check_output(command, shell=True)
+        else:
+            buf = subprocess.getoutput(command)
+        alphaviscosity = float(buf.split()[1])
+        if alphaviscosity == 0.0:
             command = 'awk " /^NU/ " '+dir+'/*.par'
             if sys.version_info[0] < 3:
                 buf = subprocess.check_output(command, shell=True)
             else:
                 buf = subprocess.getoutput(command)
             viscosity = float(buf.split()[1])
-            # simply set constant alpha value as nu / h^2 (ok at code's unit of length)
-            alphaviscosity = viscosity * (aspectratio**(-2.0))
-            
-    # get the grid's radial spacing
-    if fargo3d == 'No':
-        command = 'awk " /^RadialSpacing/ " '+dir+'/*.par'
+            if viscosity != 0.0:
+                alphaviscosity = viscosity * (aspectratio**(-2.0))
+# if no alphaviscosity, then try to see if a constant
+# kinematic viscosity has been used in the simulation
+    except IndexError:
+        command = 'awk " /^NU/ " '+dir+'/*.par'
         if sys.version_info[0] < 3:
             buf = subprocess.check_output(command, shell=True)
         else:
             buf = subprocess.getoutput(command)
-        radialspacing = str(buf.split()[1])
+        viscosity = float(buf.split()[1])
+        # simply set constant alpha value as nu / h^2 (ok at code's unit of length)
+        alphaviscosity = viscosity * (aspectratio**(-2.0))
+            
+# get the grid's radial spacing
+if fargo3d == 'No':
+    command = 'awk " /^RadialSpacing/ " '+dir+'/*.par'
+    if sys.version_info[0] < 3:
+        buf = subprocess.check_output(command, shell=True)
+    else:
+        buf = subprocess.getoutput(command)
+    radialspacing = str(buf.split()[1])
 
-    # Finally, get gas surface density field from hydro simulation, with
-    # the aim to inherit from the parameters attached to the mesh
-    # structure (rmed, Nrad etc.)
-    from field import *
-    from mesh import *
-    gas  = Field(field='gasdens'+str(on)+'.dat', directory=dir)
-
-
-if recalc_radmc == 'No':
-    recalc_gas_quantities = 'No'
+# Get gas surface density field from hydro simulation, with
+# the aim to inherit from the parameters attached to the mesh
+# structure (rmed, Nrad etc.)
+from field import *
+from mesh import *
+gas  = Field(field='gasdens'+str(on)+'.dat', directory=dir)
 
 # Color map
 if not('mycolormap' in open('params.dat').read()):

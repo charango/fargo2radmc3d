@@ -13,11 +13,11 @@
 # =================================
 #            TO DO LIST
 # =================================
-# - write gas T and vel in binary format for gas RT calc
 # - add text banner with 'banner' command
 # - results from actual 3D simulations from Fargo3D (check
 # fargo2python): check latitude expression in mesh.py
-# - work out case where RTdust_or_gas = 'both'
+# - work out case where RTdust_or_gas = 'both', in particular gas RT
+# runs with Tgas=Tdust computed by MC Thermal run
 # - check again that all goes well without x-axisflip!
 # =================================
 
@@ -61,7 +61,7 @@ if par.RTdust_or_gas == 'dust':
     if par.plot_dust_quantities == 'Yes':
         from dust_density import *
         print('--------- Plotting dust density ----------')
-        if par.dustsublimation == 'Yes':
+        if par.Tdust_eq_Thydro == 'No' and par.dustsublimation == 'Yes':
             plot_dust_density('before')
         else:
             plot_dust_density('')
@@ -95,6 +95,9 @@ if par.RTdust_or_gas == 'gas':
         
         print('--------- Computing gas temperature ----------')
         compute_gas_temperature()
+        if par.plot_gas_quantities == 'Yes':
+            print('--------- Plotting gas temperature ----------')
+            plot_gas_temperature()
         print('--------- Computing gas mass volume density ----------')
         compute_gas_mass_volume_density()
         print('--------- Writing microturbulence file ----------')

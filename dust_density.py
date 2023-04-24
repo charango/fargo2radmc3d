@@ -516,16 +516,27 @@ def compute_dust_mass_volume_density():
     # Simple dust sublimation model in case dust temperature set to
     # that of the hydro simulation:
     if par.dustsublimation == 'Yes' and par.Tdust_eq_Thydro == 'Yes':
-        for k in range(par.gas.nsec):
-            for j in range(par.gas.ncol):
-                for i in range(par.gas.nrad):
-                    # simple model for dust sublimation in case the
-                    # dust temperature simply equals that in the hydro
-                    # simulation
-                    if gas_temp[j,i,k] > 1500.0:
-                        rhodustcube[j,:,i,k] *= 1e-5
-        del gas_temp
+        buf = np.fromfile('dust_temperature.bdat', dtype='float64')
+        buf = buf[4:]
+        buf = buf.reshape(par.nbin,par.gas.nsec,par.gas.ncol,par.gas.nrad) # nbin nsec ncol nrad
 
+        # Let's reswap axes! -> ncol, nbin, nrad, nsec
+        buf = np.swapaxes(buf, 0, 1)  # nsec nbin ncol nrad
+        buf = np.swapaxes(buf, 0, 2)  # ncol nbin nsec nrad
+        buf = np.swapaxes(buf, 2, 3)  # ncol nbin nrad nsec
+        gas_temp = buf[:,0,:,:]       # ncol nrad nsec
+
+        axitemp = np.sum(gas_temp,axis=2)/par.gas.nsec
+        for j in range(par.gas.ncol):
+            for i in range(par.gas.nrad):
+                # if azimuthally-averaged dust temperature exceeds
+                # 1500K, then drop azimuthally-averaged dust density
+                # by 5 orders of magnitude:                
+                if axitemp[j,i] > 1500.0:
+                    rhodustcube[j,:,i,:] *= 1e-5
+
+        del buf, gas_temp, axitemp
+                    
     # print max of dust's mass volume density at each colatitude
     if par.verbose == 'Yes':
         for j in range(par.gas.ncol):
@@ -561,14 +572,17 @@ def recompute_dust_mass_volume_density():
     dens = np.fromfile('dust_density.binp', dtype='float64')
     rhodustcube = dens[4:]
     rhodustcube = rhodustcube.reshape(par.nbin,par.gas.nsec,par.gas.ncol,par.gas.nrad) # nbin nsec ncol nrad
-    
+
+    axitemp = np.sum(Temp,axis=1)/par.gas.nsec  # nbin ncol nrad
     for ibin in range(par.nbin):
         print('sublimation: dust species in bin', ibin, 'out of ',par.nbin-1)
-        for k in range(par.gas.nsec):
+        for i in range(par.gas.nrad):
             for j in range(par.gas.ncol):
-                for i in range(par.gas.nrad):
-                    if Temp[ibin,k,j,i] > 1500.0:
-                        rhodustcube[ibin,k,j,i] *= 1e-5   
+                # if azimuthally-averaged dust temperature exceeds
+                # 1500K, then drop azimuthally-averaged dust density
+                # by 5 orders of magnitude:                
+                if axitemp[ibin,j,i] > 1500.0:
+                    rhodustcube[ibin,:,j,i] *= 1e-5  
 
     DUSTOUT = open('dust_density.binp','wb')        # binary format
     hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol, par.nbin], dtype=int)
@@ -639,6 +653,7 @@ def plot_dust_density(mystring):
         mynorm = matplotlib.colors.LogNorm(vmin=1e-3*axidens_smallest.max(),vmax=axidens_smallest.max())
     else:
         mynorm = matplotlib.colors.LogNorm(vmin=axidens_smallest.min(),vmax=axidens_smallest.max())
+    #mynorm = matplotlib.colors.LogNorm(vmin=axidens_smallest.min(),vmax=axidens_smallest.max())
         
     CF = ax.pcolormesh(R,Z,axidens_smallest,cmap='nipy_spectral',norm=mynorm)
 
@@ -653,9 +668,9 @@ def plot_dust_density(mystring):
     cax.set_xlabel('dust density '+r'[g cm$^{-3}$]')
     cax.xaxis.labelpad = 8
 
-    if par.dustsublimation == 'No':
+    if par.dustsublimation == 'No' or par.Tdust_eq_Thydro == 'Yes':
         fileout = 'dust_density_smallest_Rz.pdf'
-    else:
+    if par.dustsublimation == 'Yes' and par.Tdust_eq_Thydro == 'No':
         if 'before' in mystring:
             fileout = 'dust_density_smallest_Rz_before_subl.pdf'
         if 'after' in mystring:
@@ -680,7 +695,8 @@ def plot_dust_density(mystring):
         mynorm = matplotlib.colors.LogNorm(vmin=1e-3*axidens_largest.max(),vmax=axidens_largest.max())
     else:
         mynorm = matplotlib.colors.LogNorm(vmin=axidens_largest.min(),vmax=axidens_largest.max())
-
+    #mynorm = matplotlib.colors.LogNorm(vmin=axidens_largest.min(),vmax=axidens_largest.max())
+    
     CF = ax.pcolormesh(R,Z,axidens_largest,cmap='nipy_spectral',norm=mynorm)
 
     divider = make_axes_locatable(ax)
@@ -694,13 +710,14 @@ def plot_dust_density(mystring):
     cax.set_xlabel('dust density '+r'[g cm$^{-3}$]')
     cax.xaxis.labelpad = 8
 
-    if par.dustsublimation == 'No':
+    if par.dustsublimation == 'No' or par.Tdust_eq_Thydro == 'Yes':
         fileout = 'dust_density_largest_Rz.pdf'
-    else:
+    if par.dustsublimation == 'Yes' and par.Tdust_eq_Thydro == 'No':
         if 'before' in mystring:
             fileout = 'dust_density_largest_Rz_before_subl.pdf'
         if 'after' in mystring:
             fileout = 'dust_density_largest_Rz_after_subl.pdf'
+
     plt.savefig('./'+fileout, dpi=160)
     plt.close(fig) 
     
@@ -738,13 +755,14 @@ def plot_dust_density(mystring):
     cax.set_xlabel('midplane dust density '+r'[g cm$^{-3}$]')
     cax.xaxis.labelpad = 8
 
-    if par.dustsublimation == 'No':
+    if par.dustsublimation == 'No' or par.Tdust_eq_Thydro == 'Yes':
         fileout = 'dust_density_smallest_midplane.pdf'
-    else:
+    if par.dustsublimation == 'Yes' and par.Tdust_eq_Thydro == 'No':
         if 'before' in mystring:
             fileout = 'dust_density_smallest_midplane_before_subl.pdf'
         if 'after' in mystring:
             fileout = 'dust_density_smallest_midplane_after_subl.pdf'
+
     plt.savefig('./'+fileout, dpi=160)
     plt.close(fig)
 
@@ -780,13 +798,14 @@ def plot_dust_density(mystring):
     cax.set_xlabel('midplane dust density '+r'[g cm$^{-3}$]')
     cax.xaxis.labelpad = 8
 
-    if par.dustsublimation == 'No':
+    if par.dustsublimation == 'No' or par.Tdust_eq_Thydro == 'Yes':
         fileout = 'dust_density_largest_midplane.pdf'
-    else:
+    if par.dustsublimation == 'Yes' and par.Tdust_eq_Thydro == 'No':
         if 'before' in mystring:
             fileout = 'dust_density_largest_midplane_before_subl.pdf'
         if 'after' in mystring:
             fileout = 'dust_density_largest_midplane_after_subl.pdf'
+
     plt.savefig('./'+fileout, dpi=160)
     plt.close(fig)
 

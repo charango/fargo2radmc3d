@@ -28,6 +28,10 @@ def compute_gas_temperature():
             # hdr[2] = nb of grid cells
             hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol], dtype=int)
             hdr.tofile(TEMPOUT)
+
+            TEMPOUTCYL = open('gas_tempcyl.binp','wb')
+            hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.nver], dtype=int)
+            hdr.tofile(TEMPOUTCYL)
             
         if par.RTdust_or_gas == 'dust':
             print('--------- Writing dust_temperature.bdat file (no mctherm) ----------')
@@ -107,12 +111,15 @@ def compute_gas_temperature():
         # Finally write temperature file
         if par.RTdust_or_gas == 'gas':
             # If writing data in an ascii file the ordering should be: nsec, ncol, nrad.
-            # We therefore need to swap axes of array rhodustcube
+            # We therefore need to swap axes of array gas_temp
             # before dumping it in a binary file! just like mastermind game!
             gas_temp = np.swapaxes(gas_temp, 0, 1)  # nrad ncol nsec
             gas_temp = np.swapaxes(gas_temp, 0, 2)  # nsec ncol nrad
             gas_temp.tofile(TEMPOUT)
             TEMPOUT.close()
+            gas_temp_cyl.tofile(TEMPOUTCYL)         # nver nrad nsec
+            TEMPOUTCYL.close() 
+            del gas_temp, gas_temp_cyl
             
         if par.RTdust_or_gas == 'dust':
             # Define 4D dust temperature array
@@ -120,15 +127,14 @@ def compute_gas_temperature():
             for ibin in range(par.nbin):
                 dust_temp[:,ibin,:,:] = gas_temp
             # If writing data in an ascii file the ordering should be: nbin, nsec, ncol, nrad.
-            # We therefore need to swap axes of array rhodustcube
+            # We therefore need to swap axes of array dust_temp
             # before dumping it in a binary file! just like mastermind game!
             dust_temp = np.swapaxes(dust_temp, 2, 3)  # ncol nbin nsec nrad
             dust_temp = np.swapaxes(dust_temp, 0, 1)  # nbin ncol nsec nrad
             dust_temp = np.swapaxes(dust_temp, 1, 2)  # nbin nsec ncol nrad
             dust_temp.tofile(TEMPOUT)
             TEMPOUT.close()
-        
-        del dust_temp    
+            del dust_temp    
         
         
 # =========================
@@ -144,13 +150,13 @@ def plot_gas_temperature():
         # Let's reswap axes! -> ncol, nbin, nrad, nsec
         buf = np.swapaxes(buf, 0, 1)  # nsec nbin ncol nrad
         buf = np.swapaxes(buf, 0, 2)  # ncol nbin nsec nrad
-        buf = np.swapaxes(buf, 2, 3)  # ncol nbin nrad nrad
-
+        buf = np.swapaxes(buf, 2, 3)  # ncol nbin nrad nsec
         gas_temp = buf[:,0,:,:]
+        del buf
 
     if par.RTdust_or_gas == 'gas':
         gas_temp = np.fromfile('gas_temperature.binp', dtype='float64')
-        gas_temp = gas_temp[4:]
+        gas_temp = gas_temp[3:]
         gas_temp = gas_temp.reshape(par.gas.nsec,par.gas.ncol,par.gas.nrad) # nbin nsec ncol nrad
 
         # Let's reswap axes! -> ncol, nrad, nsec
@@ -271,5 +277,5 @@ def plot_gas_temperature():
             
     plt.savefig('./'+fileout, dpi=160)
     plt.close(fig)  # close figure as we reopen figure at every output number
-            
-    del buf
+        
+    del gas_temp

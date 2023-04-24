@@ -165,6 +165,7 @@ def exportfits():
         if par.RTdust_or_gas == 'gas':
             nlam = par.linenlam
             im_nx = int(np.sqrt(hdr['NAXIS1']/nlam))
+            vel_range = -par.widthkms + 2.0*par.widthkms*np.arange(nlam)/(nlam-1.0)
         else:
             if par.polarized_scat == 'Yes':
                 im_nx = int(np.sqrt(hdr['NAXIS1']/5.0))
