@@ -489,8 +489,8 @@ def produce_final_image():
                         culength = float(buf.split()[1])*1.5e11  #from au to meters
                 else:
                     culength = par.new_unit_length # in meters
-
-            code_unit_of_length = 1e2*culength # in cm
+                code_unit_of_length = 1e2*culength # in cm
+            
             xp *= code_unit_of_length/par.au/par.distance
             yp *= code_unit_of_length/par.au/par.distance
             print('planet position on simulation plane [arcseconds]: xp = ', xp, ' and yp = ', yp)
