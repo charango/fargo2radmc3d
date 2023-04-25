@@ -110,6 +110,8 @@ if RTdust_or_gas == 'dust':
     linenlam = 1
     if not('dust_interpolation' in open('params.dat').read()):
         dust_interpolation = 'T'
+    if not('dustsublimation' in open('params.dat').read()):
+        dustsublimation = 'No'
 if RTdust_or_gas == 'gas':
     incl_lines = 1
     incl_dust  = 0
