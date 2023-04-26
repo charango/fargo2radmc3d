@@ -472,7 +472,7 @@ def produce_final_image():
             
             # convert from simulation units to arcsecond:
             if par.recalc_radmc == 'Yes':
-                code_unit_of_length = par.gas.culength
+                culength = par.gas.culength
             else:
                 if par.override_units == 'No':
                     if par.fargo3d == 'No':
@@ -489,7 +489,7 @@ def produce_final_image():
                         culength = float(buf.split()[1])*1.5e11  #from au to meters
                 else:
                     culength = par.new_unit_length # in meters
-                code_unit_of_length = 1e2*culength # in cm
+            code_unit_of_length = 1e2*culength # in cm
             
             xp *= code_unit_of_length/par.au/par.distance
             yp *= code_unit_of_length/par.au/par.distance
