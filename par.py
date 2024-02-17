@@ -104,6 +104,7 @@ if fargo3d == 'Yes':
         hydro2D = 'No'
 
 # Define parameters for use by RADMC-3D
+# Case where only dust transfer is calculated:
 if RTdust_or_gas == 'dust':
     incl_dust  = 1
     incl_lines = 0
@@ -112,6 +113,8 @@ if RTdust_or_gas == 'dust':
         dust_interpolation = 'T'
     if not('dustsublimation' in open('params.dat').read()):
         dustsublimation = 'No'
+    
+# Case where only line transfer is calculated:
 if RTdust_or_gas == 'gas':
     incl_lines = 1
     incl_dust  = 0
@@ -120,20 +123,21 @@ if RTdust_or_gas == 'gas':
     # be that of the hydro simulation (it cannot be equal to the dust
     # temperature computed by a RT Monte-Carlo calculation)
     Tdust_eq_Thydro = 'Yes'
-# case below has not been implemented yet
+    
+# Case where both dust and line transfers are calculated
 if RTdust_or_gas == 'both':
     incl_lines = 1
     incl_dust  = 1
+    if not('dust_interpolation' in open('params.dat').read()):
+        dust_interpolation = 'T'
+    if not('dustsublimation' in open('params.dat').read()):
+        dustsublimation = 'No'
 
 if recalc_radmc == 'Yes':
     recalc_rawfits = 'Yes'
     recalc_fluxmap = 'Yes'
 if recalc_rawfits == 'Yes':
     recalc_fluxmap = 'Yes'
-if Tdust_eq_Thydro == 'Yes':
-    tgas_eq_tdust = 0
-else:
-    tgas_eq_tdust = 1
 
 nb_photons = int(nb_photons)
 nb_photons_scat = int(nb_photons_scat)
@@ -175,7 +179,7 @@ bpaangle = -90.0-bpaangle
 
 
 # Dust global parameters in Fargo3D simulations
-if fargo3d == 'Yes' and RTdust_or_gas == 'dust':
+if fargo3d == 'Yes' and (RTdust_or_gas == 'dust' or RTdust_or_gas == 'both'):
     command = 'awk " /^DUSTINTERNALRHO/ " '+dir+'/variables.par'
     # check which version of python we're using
     if sys.version_info[0] < 3:   # python 2.X
@@ -230,11 +234,10 @@ if RTdust_or_gas == 'gas':
     if widthkms == 0.0:
         label = dir+'_o'+str(on)+'_gas'+str(gasspecies)+'_iline'+str(iline)+'_lmode'+str(lines_mode)+'_ab'+str('{:.0e}'.format(abundance))+'_vkms'+str(vkms)+'_turbvel'+str(turbvel)+'_nc'+str(ncol)+'_xf'+str(xaxisflip)+'_Td'+str(Tdust_eq_Thydro)
     else:
-        label = dir+'_o'+str(on)+'_gas'+str(gasspecies)+'_iline'+str(iline)+'_lmode'+str(lines_mode)+'_ab'+str('{:.0e}'.format(abundance))+'_widthkms'+str(widthkms)+'_turbvel'+str(turbvel)+'_nc'+str(ncol)+'_xf'+str(xaxisflip)+'_Td'+str(Tdust_eq_Thydro)
-        
-if RTdust_or_gas == 'both':
-    sys.exit('Case not worked out yet...')
+        label = dir+'_o'+str(on)+'_gas'+str(gasspecies)+'_iline'+str(iline)+'_lmode'+str(lines_mode)+'_ab'+str('{:.0e}'.format(abundance))+'_widthkms'+str(widthkms)+'_turbvel'+str(turbvel)+'_nc'+str(ncol)+'_xf'+str(xaxisflip)+'_dustandgas'
 
+if RTdust_or_gas == 'both':
+    label = dir+'_o'+str(on)+'_gas'+str(gasspecies)+'_iline'+str(iline)+'_lmode'+str(lines_mode)+'_ab'+str('{:.0e}'.format(abundance))+'_widthkms'+str(widthkms)+'_nc'+str(ncol)+'_xf'+str(xaxisflip)+'_nb'+str(nbin)+'_mode'+str(scat_mode)+'_dustandgas'
     
 # name of .fits file where data is output
 # Note that M.label will disentangle dust and gas line calculations
@@ -243,14 +246,14 @@ if plot_tau == 'No':
         image = 'imageTb_'
     else:
         image = 'image_'
-    if RTdust_or_gas == 'gas':
+    if (RTdust_or_gas == 'gas' or RTdust_or_gas == 'both'):
         # no need for lambda in file's name for gas RT calculations...
         outfile = image+str(label)+'_i'+str(inclination)+'_phi'+str(phiangle)+'_PA'+str(posangle)  
     if RTdust_or_gas == 'dust':
         outfile = image+str(label)+'_lbda'+str(wavelength)+'_i'+str(inclination)+'_phi'+str(phiangle)+'_PA'+str(posangle)
         
 else:
-    if RTdust_or_gas == 'gas':
+    if (RTdust_or_gas == 'gas' or RTdust_or_gas == 'both'):
         # no need for lambda in file's name for gas RT calculations...
         outfile = 'tau_'+str(label)+'_i'+str(inclination)+'_phi'+str(phiangle)+'_PA'+str(posangle)  
     if RTdust_or_gas == 'dust':
@@ -267,8 +270,11 @@ if add_noise == 'Yes':
     
 outputfitsfile_wholedatacube = outfile+'_all.fits'
 
-if RTdust_or_gas == 'gas':
+if (RTdust_or_gas == 'gas' or RTdust_or_gas == 'both'):
     outfile += '_moment'+str(moment_order)
+
+if (RTdust_or_gas == 'both' and subtract_continuum == 'Yes'):
+    outfile += '_contsub'
    
 outputfitsfile = outfile+'.fits'
 
@@ -287,9 +293,10 @@ if not('dustdens_eq_gasdens' in open('params.dat').read()):
     dustdens_eq_gasdens = 'No'
 
     
-# Set of parameters that we only need to read or specify even if radmc3d is not called
-# get the aspect ratio and flaring index used in the numerical simulation
-# note that this works both for Dusty FARGO-ADSG and FARGO3D simulations
+# Set of parameters that we only need to read or specify even if
+# radmc3d is not called get the aspect ratio and flaring index used in
+# the numerical simulation note that this works both for Dusty
+# FARGO-ADSG and FARGO3D simulations
 command = 'gawk " BEGIN{IGNORECASE=1} /^AspectRatio/ " '+dir+'/*.par'
 # check which version of python we're using
 if sys.version_info[0] < 3:   # python 2.X
@@ -298,8 +305,8 @@ else:                         # python 3.X
     buf = subprocess.getoutput(command)
 aspectratio = float(buf.split()[1])
 
-# get the flaring index used in the numerical simulation
-# note that this works both for Dusty FARGO-ADSG and FARGO3D simulations
+# get the flaring index used in the numerical simulation note that
+# this works both for Dusty FARGO-ADSG and FARGO3D simulations
 command = 'gawk " BEGIN{IGNORECASE=1} /^FlaringIndex/ " '+dir+'/*.par'
 if sys.version_info[0] < 3:
     buf = subprocess.check_output(command, shell=True)
@@ -372,8 +379,11 @@ from field import *
 from mesh import *
 gas  = Field(field='gasdens'+str(on)+'.dat', directory=dir)
 
+if (minmaxaxis == '#'):
+    minmaxaxis = 1000.0   # arbitrarilly large number
+
 # Color map
 if not('mycolormap' in open('params.dat').read()):
     mycolormap = 'nipy_spectral'
-if RTdust_or_gas == 'gas' and moment_order == 1:
+if ((RTdust_or_gas == 'gas' or RTdust_or_gas == 'both') and moment_order == 1):
     mycolormap = 'RdBu_r'

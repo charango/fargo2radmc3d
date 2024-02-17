@@ -19,7 +19,7 @@ def write_radmc3d_script():
             command=command+' stokes'
 
     # RT in gas lines
-    if par.RTdust_or_gas == 'gas':
+    if par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both':
         if par.widthkms == 0.0:
             command='radmc3d image iline '+str(par.iline)+' vkms '+str(par.vkms)+' npix '+str(par.nbpixels)+' incl '+str(par.inclination)+' posang '+str(par.posangle+90.0)+' phi '+str(par.phiangle)
         else:
@@ -213,8 +213,9 @@ def write_lines(specie,lines_mode):
         if par.gasspecies == 'so':
             datafile = 'so@lique'
         if par.gasspecies == 'cs':
-            datafile = 'cs@lique'
+            datafile = 'cs'
         command = 'curl -O https://home.strw.leidenuniv.nl/~moldata/datafiles/'+datafile+'.dat'
+        print(command)
         os.system(command)
         command = 'mv '+datafile+'.dat molecule_'+str(par.gasspecies)+'.inp'
         os.system(command)

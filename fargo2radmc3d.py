@@ -16,8 +16,8 @@
 # - add text banner with 'banner' command
 # - results from actual 3D simulations from Fargo3D (check
 # fargo2python): check latitude expression in mesh.py
-# - work out case where RTdust_or_gas = 'both', in particular gas RT
-# runs with Tgas=Tdust computed by MC Thermal run
+# - plot dust-to-gas density ratio in prevision that I could use that
+# quantity to customize species-to-gas abundance ratio?
 # - check again that all goes well without x-axisflip!
 # =================================
 
@@ -28,33 +28,154 @@
 print('--------- Reading and interpreting params.dat parameter file ----------')
 import par
 
+# we first set parameter tgas_eq_tdust used by radmc3d default value
+# is 0, changed only if both line and dust transfer is calculated
+tgas_eq_tdust = 0
+
 
 # =====================================
 # DUST RADIATIVE TRANSFERT CALCULATIONS
 # =====================================
 if par.RTdust_or_gas == 'dust':
-
-    # 1. We first compute the dust temperature in case RADMC-3D does not
-    # do it via a Monte Carlo run. We call function
-    # compute_gas_temperature for this purpose:
+        
+    # 1. we compute the dust temperature in case RADMC-3D does
+    # not do it via a Monte Carlo run. We call function
+    # compute_hydro_temperature for this purpose, which reads the gas
+    # temperature in the hydro simulation    
     if par.Tdust_eq_Thydro == 'Yes':
         from gas_temperature import *
+        
         if par.recalc_dust_temperature == 'Yes':
-            print('--------- Setting dust temperature to gas hydro temperature ----------')
-            compute_gas_temperature()
+            print('--------- Setting dust temperature to temperature of hydro simulation ----------')
+            compute_hydro_temperature()
         else:
-            print('--------- I did not compute dust temperature (recalc_dust_temperature = No in params.dat file) ----------')
+            print('--------- I did not recompute the dust temperature (recalc_dust_temperature = No in params.dat file) ----------')
+
         if par.plot_dust_quantities == 'Yes':
             print('--------- Plotting dust "hydro" temperature ----------')
-            plot_gas_temperature()
+            plot_gas_temperature()   # here I could rather call it plot_hydro_temperature
+
+            
+    # 2. we then compute the dust mass volume density
+    if par.recalc_dust_density == 'Yes':
+        from dust_density import *
+        print('--------- Computing dust densities ----------')
+        compute_dust_mass_volume_density()
+    else:
+        print('--------- I did not recompute dust densities (recalc_density = No in params.dat file) ----------')
+        
+    # Plot dust density if dust sublimation not taken into account. To
+    # take dust sublimation into account, we first need the dust
+    # temperature to be computed.
+    if par.plot_dust_quantities == 'Yes':
+        from dust_density import *
+        print('--------- Plotting dust density ----------')
+        if par.Tdust_eq_Thydro == 'No' and par.dustsublimation == 'Yes':
+            plot_dust_density('before')
+        else:
+            plot_dust_density('')
+
+            
+    # 3. Calculation of dust opacities follows
+    from dust_opacities import *
+    if par.recalc_opac == 'Yes':
+        print('--------- Computing dust opacities ----------')
+        compute_dust_opacities()
+    else:
+        print('--------- I did not compute dust opacities (recalc_opac = No in params.dat file) ------ ')
+        
+    if par.plot_dust_quantities == 'Yes':
+        from dust_opacities import *
+        print('--------- Plotting dust opacities ----------')
+        plot_opacities(species=par.species,amin=par.amin,amax=par.amax,nbin=par.nbin,lbda1=par.wavelength*1e3)
+        
+    # Write dustopac.inp file even if we don't (re)calculate dust opacities
+    write_dustopac(par.species,par.nbin)
+
     
-    # 2. We then compute the dust mass volume density
+# ====================================
+# GAS RADIATIVE TRANSFERT CALCULATIONS
+# ====================================
+if par.RTdust_or_gas == 'gas':
+
+    # we start by computing gas temperature, density and velocity
+    if par.recalc_gas_quantities == 'Yes':
+
+        from gas_density import *
+        from gas_temperature import *
+        from gas_velocity import *
+        
+        print('--------- Setting gas temperature to temperature of hydro simulation ----------')
+        compute_hydro_temperature()
+        if par.plot_gas_quantities == 'Yes':
+            print('--------- Plotting gas temperature ----------')
+            plot_gas_temperature()
+            
+        print('--------- Computing gas density ----------')
+        compute_gas_mass_volume_density()
+        
+        print('--------- Writing microturbulence file ----------')
+        write_gas_microturb()
+        
+        print('--------- Computing gas velocity ----------')
+        compute_gas_velocity()
+        
+    else:
+        print('--------- I did not compute the gas density, temperature nor velocity (recalc_gas_quantities = No in params.dat file) ----------')
+
+        
+# =====================================
+# BOTH DUST AND GAS RADIATIVE TRANSFERT CALCULATIONS
+# =====================================
+if par.RTdust_or_gas == 'both':
+
+    # we first set parameter tgas_eq_tdust used by radmc3d:
+    if (par.Tdust_eq_Thydro == 'Yes' or (par.Tdust_eq_Thydro == 'No' and par.Tdust_eq_Tgas == 'Yes') ):
+        tgas_eq_tdust = 1
+    else:
+        tgas_eq_tdust = 0
+    
+    # start by computing gas temperature, density and velocity
+    if par.recalc_gas_quantities == 'Yes':
+
+        from gas_density import *
+        from gas_temperature import *
+        from gas_velocity import *
+
+        if (par.Tdust_eq_Thydro == 'Yes' or (par.Tdust_eq_Thydro == 'No' and par.Tdust_eq_Tgas == 'No') ):
+            print('--------- Computing temperature of hydro simulation ----------')
+            compute_hydro_temperature()
+            if par.plot_gas_quantities == 'Yes':
+                print('--------- Plotting hydro temperature ----------')
+                plot_gas_temperature()
+                
+        print('--------- Computing gas density ----------')
+        compute_gas_mass_volume_density()
+        
+        print('--------- Writing microturbulence file ----------')
+        write_gas_microturb()
+        
+        print('--------- Computing gas velocity ----------')
+        compute_gas_velocity()
+        
+    else:
+        print('--------- I did not compute the gas density, temperature nor velocity (recalc_gas_quantities = No in params.dat file) ----------')
+
+    # At this stage, either Tdust_eq_Thydro = Yes:
+    # dust_temperature.bdat has been already written, or
+    # Tdust_eq_Thydro = No: we will compute it by thermal MC run when
+    # calling RADMC3D below
+
+    # Now we compute all dust quantities:
+        
+    # here we compute the dust mass volume density if needed
     if par.recalc_dust_density == 'Yes':
         from dust_density import *
         print('--------- Computing dust surface density ----------')
         compute_dust_mass_volume_density()
     else:
         print('--------- I did not compute dust densities (recalc_density = No in params.dat file) ----------')
+        
     # Plot dust density if dust sublimation not taken into account. To
     # take dust sublimation into account, we first need the dust
     # temperature to be computed.
@@ -66,7 +187,7 @@ if par.RTdust_or_gas == 'dust':
         else:
             plot_dust_density('')
             
-    # 3. Calculation of dust opacities follows
+    # calculation of dust opacities follows now
     from dust_opacities import *
     if par.recalc_opac == 'Yes':
         print('--------- Computing dust opacities ----------')
@@ -77,36 +198,11 @@ if par.RTdust_or_gas == 'dust':
         from dust_opacities import *
         print('--------- Plotting dust opacities ----------')
         plot_opacities(species=par.species,amin=par.amin,amax=par.amax,nbin=par.nbin,lbda1=par.wavelength*1e3)
+        
     # Write dustopac.inp file even if we don't (re)calculate dust opacities
     write_dustopac(par.species,par.nbin)
-
-    
-# ====================================
-# GAS RADIATIVE TRANSFERT CALCULATIONS
-# ====================================
-if par.RTdust_or_gas == 'gas':
-
-    # start by computing gas temperature and then mass volume density
-    if par.recalc_gas_quantities == 'Yes':
-
-        from gas_density import *
-        from gas_temperature import *
-        from gas_velocity import *
         
-        print('--------- Computing gas temperature ----------')
-        compute_gas_temperature()
-        if par.plot_gas_quantities == 'Yes':
-            print('--------- Plotting gas temperature ----------')
-            plot_gas_temperature()
-        print('--------- Computing gas mass volume density ----------')
-        compute_gas_mass_volume_density()
-        print('--------- Writing microturbulence file ----------')
-        write_gas_microturb()
-        print('--------- Computing gas velocity ----------')
-        compute_gas_velocity()
-    else:
-        print('--------- I did not compute the gas density, temperature nor velocity (recalc_gas_quantities = No in params.dat file) ----------')
-
+        
     
 # ===============
 # CALL TO RADMC3D 
@@ -125,13 +221,14 @@ if par.recalc_radmc == 'Yes':
     write_wavelength()
     write_stars(Rstar = par.rstar, Tstar = par.teff)
     write_AMRgrid(par.gas, Plot=False)
-    if par.RTdust_or_gas == 'gas':
-        write_lines(str(par.gasspecies),par.lines_mode)        
+    if par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both':
+        write_lines(str(par.gasspecies),par.lines_mode)
+        
     # rto_style = 3 means that RADMC3D will write binary output files
     # setthreads corresponds to the number of threads (cores) over which radmc3d runs
-    write_radmc3dinp(incl_dust=par.incl_dust, incl_lines=par.incl_lines, lines_mode=par.lines_mode, nphot_scat=par.nb_photons_scat, nphot=par.nb_photons, rto_style=3, tgas_eq_tdust=par.tgas_eq_tdust, modified_random_walk=1, scattering_mode_max=par.scat_mode, setthreads=par.nbcores)
+    write_radmc3dinp(incl_dust=par.incl_dust, incl_lines=par.incl_lines, lines_mode=par.lines_mode, nphot_scat=par.nb_photons_scat, nphot=par.nb_photons, rto_style=3, tgas_eq_tdust=tgas_eq_tdust, modified_random_walk=1, scattering_mode_max=par.scat_mode, setthreads=par.nbcores)
 
-    if par.RTdust_or_gas == 'dust' and par.Tdust_eq_Thydro == 'No':
+    if ( (par.RTdust_or_gas == 'dust' or par.RTdust_or_gas == 'both') and par.Tdust_eq_Thydro == 'No' ):
         print('--------- Running thermal MC calculation ----------')
         os.system('radmc3d mctherm')
 

@@ -51,7 +51,7 @@ def exportfits():
                 print('range of velocities = ', vel_range)
             dv = vel_range[1]-vel_range[0]
         else:
-            if par.RTdust_or_gas == 'gas':
+            if par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both':
                 lbda0 = lbda[0]
             else:
                 lbda0 = par.wavelength*1e3 # in microns
@@ -88,7 +88,7 @@ def exportfits():
         stdev_y = (par.bmin/(2.*np.sqrt(2.*np.log(2.)))) / mycdelt
             
         # gas or dust continuum -> 1D array:
-        if par.RTdust_or_gas == 'gas' or (par.RTdust_or_gas == 'dust' and par.polarized_scat == 'No'):
+        if par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both' or (par.RTdust_or_gas == 'dust' and par.polarized_scat == 'No'):
             images = np.loadtxt(infile, skiprows=5+nlam)
 
         # dust polarized emission -> 1D array:
@@ -162,7 +162,7 @@ def exportfits():
         mydim = hdr['NAXIS']
 
         # Get dimensions from 1D array stored in image.fits:
-        if par.RTdust_or_gas == 'gas':
+        if par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both':
             nlam = par.linenlam
             im_nx = int(np.sqrt(hdr['NAXIS1']/nlam))
             vel_range = -par.widthkms + 2.0*par.widthkms*np.arange(nlam)/(nlam-1.0)
@@ -234,13 +234,14 @@ def exportfits():
             im[k,im_ny//2+1,im_nx//2+1] = 0.0
 
     # - - - - - -
-    # gas line RT calculations
+    # line or dust+line RT calculations
     # - - - - - -
-    if par.RTdust_or_gas == 'gas':
+    if par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both':
         
         intensity_in_each_channel = np.zeros((nlam,1,im_ny,im_nx))
         moment0 = np.zeros((im_ny,im_nx))
         moment1 = np.zeros((im_ny,im_nx))
+        im0     = np.zeros((im_ny,im_nx))
             
         for i in range(nlam):
             im_v = images[i*im_ny*im_nx:(i+1)*im_ny*im_nx]
@@ -251,6 +252,15 @@ def exportfits():
             # large. We put the specific intensity to zero at the
             # origin, as it should be in our disc model!
             im[im_ny//2,im_nx//2] = 0.0
+
+            # dust continuum emission is removed by subtracting the
+            # very first channel map (you need to make sure that the
+            # very first channel map does not contain significant
+            # information on gas emission...):
+            if (par.RTdust_or_gas == 'both' and par.subtract_continuum == 'Yes'):
+                if i==0:
+                    im0 = im
+                im = im - im0
                 
             # ---
             if (par.add_noise == 'Yes'):
@@ -285,7 +295,7 @@ def exportfits():
         # end loop over wavelengths
         if par.moment_order == 0:
             im = moment0   # non-convolved quantity
-        if par.RTdust_or_gas == 'gas' and par.moment_order == 1:
+        if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
             im = moment1/moment0 # ratio of two beam-convolved quantities (convolution not redone afterwards)
     
 
@@ -319,7 +329,7 @@ def exportfits():
     hdu.header['CUNIT2'] = 'deg     '
     hdu.header['CRPIX1'] = float((im_nx+1.)/2.)
     hdu.header['CRPIX2'] = float((im_ny+1.)/2.)
-    if par.RTdust_or_gas == 'gas' and par.moment_order == 1:
+    if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
         hdu.header['BUNIT'] = 'LOS velocity'
         hdu.header['BTYPE'] = 'km/s'
     else:
@@ -349,7 +359,7 @@ def exportfits():
     # emission only)
     # ----------
     # case 1: application to CASA -> intensity in Jy/pixel, axis 4 = spectral
-    if par.RTdust_or_gas == 'gas' and par.intensity_inJyperpixel_inrawdatacube == 'Yes':
+    if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.intensity_inJyperpixel_inrawdatacube == 'Yes':
         hdu3 = fits.PrimaryHDU()
         hdu3.header['BITPIX'] = -32
         hdu3.header['NAXIS'] = 4
@@ -390,7 +400,7 @@ def exportfits():
         hdu3.writeto(par.outputfitsfile_wholedatacube, output_verify='fix', overwrite=True)
         
     # case 2: application to bettermoments -> intensity in Jy/beam, axis 3 = spectral
-    if par.RTdust_or_gas == 'gas' and par.intensity_inJyperpixel_inrawdatacube == 'No':
+    if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.intensity_inJyperpixel_inrawdatacube == 'No':
         hdu3 = fits.PrimaryHDU()
         hdu3.header['BITPIX'] = -32
         hdu3.header['NAXIS'] = 3

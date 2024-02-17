@@ -142,7 +142,7 @@ def produce_final_image():
         # Call to Gauss_filter function
         if par.moment_order != 1:
             smooth = Gauss_filter(raw_intensity, stdev_x, stdev_y, par.bpaangle, Plot=False)
-        if par.RTdust_or_gas == 'gas' and par.moment_order == 1:
+        if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
             smooth = raw_intensity
 
         # convert image from Jy/pixel to mJy/beam or microJy/beam
@@ -175,20 +175,20 @@ def produce_final_image():
     
         if par.brightness_temp=='Yes':
             # Gas RT and a single velocity channel
-            if par.RTdust_or_gas == 'gas' and par.widthkms == 0.0:
+            if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.widthkms == 0.0:
                 strflux = strgas+' brightness temperature [K]'
             # Gas RT and mooment order 0 map
-            if par.RTdust_or_gas == 'gas' and par.moment_order == 0 and par.widthkms != 0.0:
+            if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 0 and par.widthkms != 0.0:
                 strflux = strgas+' integrated brightness temperature [K km/s]'
             if par.RTdust_or_gas == 'dust':
                 strflux = r'Brightness temperature [K]'
                 
         else:
             # Gas RT and a single velocity channel
-            if par.RTdust_or_gas == 'gas' and par.widthkms == 0.0:
+            if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.widthkms == 0.0:
                 strflux = strgas+' intensity [mJy/beam]'
             # Gas RT and mooment order 0 map
-            if par.RTdust_or_gas == 'gas' and par.moment_order == 0 and par.widthkms != 0.0:
+            if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 0 and par.widthkms != 0.0:
                 strflux = strgas+' integrated intensity [mJy/beam km/s]'
             if convolved_intensity.max() < 1.0 and ('max_colorscale' in open('params.dat').read()):
                 if not(par.max_colorscale == '#'):
@@ -196,13 +196,13 @@ def produce_final_image():
                         convolved_intensity = smooth * 1e6 * beam   # microJy/beam
                         strflux = r'Flux of continuum emission [$\mu$Jy/beam]'
                         # Gas RT and a single velocity channel
-                        if par.RTdust_or_gas == 'gas' and par.widthkms == 0.0:
+                        if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.widthkms == 0.0:
                             strflux = strgas+' intensity [$\mu$Jy/beam]'
-                        if par.RTdust_or_gas == 'gas' and par.moment_order == 0 and par.widthkms != 0.0:
+                        if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 0 and par.widthkms != 0.0:
                             strflux = strgas+' integrated intensity [$\mu$Jy/beam km/s]'
 
         #
-        if par.RTdust_or_gas == 'gas' and par.moment_order == 1:
+        if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
             convolved_intensity = smooth
             # this is actually 'raw_intensity' since for moment 1 maps
             # the intensity in each channel map is already convolved,
@@ -378,6 +378,25 @@ def produce_final_image():
         da = par.minmaxaxis
     else:
         da = np.maximum(abs(a0),abs(a1))
+
+    # CB (June 2023): if da too small, RA and DEC offsets are displayed in mas and not in arcsec
+    if np.abs(da) < 0.01:
+        a0 *= 1e3
+        a1 *= 1e3
+        d0 *= 1e3
+        d1 *= 1e3
+        da *= 1e3
+        par.minmaxaxis *= 1e3
+        par.bmaj *= 1e3
+        par.bmin *= 1e3
+        ax.set_xlabel('RA offset [mas]')
+        ax.set_ylabel('Dec offset [mas]')
+        strylabel_polar = 'Radius [mas]'
+    else:
+        ax.set_xlabel('RA offset [arcsec]')
+        ax.set_ylabel('Dec offset [arcsec]')
+        strylabel_polar = 'Radius [arcsec]'
+        
     mina = da
     maxa = -da
     xlambda = mina - 0.166*da
@@ -392,8 +411,7 @@ def produce_final_image():
     ax.yaxis.set_major_locator(plt.MaxNLocator(7))
     #ax.set_xticks(ax.get_yticks())    # set same ticks in x and y in cartesian
     #ax.set_yticks(ax.get_xticks())    # set same ticks in x and y in cartesian 
-    ax.set_xlabel('RA offset [arcsec]')
-    ax.set_ylabel('Dec offset [arcsec]')
+    
 
     # Normalization: linear or logarithmic scale
     if par.min_colorscale == '#':
@@ -428,7 +446,7 @@ def produce_final_image():
     CM = ax.imshow(convolved_intensity, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[a0,a1,d0,d1], norm=mynorm, aspect='auto')
     
     # Add wavelength/user-defined string in top-left/right corners
-    if ('display_label' in open('params.dat').read()):
+    if ( ('display_label' in open('params.dat').read()) and (par.display_label != '#') ):
         strlambda = par.display_label
     else:
         strlambda = '$\lambda$='+str(round(lbda0, 2))+'mm' # round to 2 decimals
@@ -511,7 +529,7 @@ def produce_final_image():
     '''
     
     # Add a few contours in order 1 moment maps for gas emission
-    if par.RTdust_or_gas == 'gas' and par.moment_order == 1:
+    if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
         ax.contour(convolved_intensity,levels=10,color='black', linestyles='-',origin='lower',extent=[a0,a1,d0,d1])
     
     # plot beam
@@ -630,7 +648,7 @@ def produce_final_image():
         ax.set_xticks((-180,-120,-60,0,60,120,180))
         #ax.set_yticks((0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7))
         ax.set_xlabel('Position Angle [deg]')
-        ax.set_ylabel('Radius [arcsec]')
+        ax.set_ylabel(strylabel_polar)
 
         
         # imshow does a bilinear interpolation. You can switch it off by putting
@@ -704,7 +722,7 @@ def produce_final_image():
             ax.tick_params(axis='y', which='minor', right=True)
             ax.set_xlim(0,rkarr.max())      # Deprojected radius in arcsec
             ax.tick_params('both')
-            ax.set_xlabel('Radius [arcsec]')
+            ax.set_xlabel(strylabel_polar)
             ax.set_ylabel(strflux)
 
             ax.grid(axis='both', which='major', ls='-', alpha=0.8)
