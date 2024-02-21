@@ -349,9 +349,11 @@ def produce_final_image():
     # plotting image panel
     # --------------------
     matplotlib.rcParams.update({'font.size': 20})
-    #matplotlib.rc('font', family='Helvetica')
+    matplotlib.rc('font', family='Arial') 
+    '''
     plt.rcParams['font.family'] = 'DeJavu Serif'
     plt.rcParams['font.serif'] = ['Helvetica']
+    '''
     fontcolor='white'
 
     # name of pdf file for final image

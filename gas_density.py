@@ -156,10 +156,20 @@ def compute_gas_mass_volume_density():
 
 
     print('--------- writing numberdens.binp file ----------')
+    # If writing data in an ascii file the ordering should be: nsec, ncol, nrad.
+    # We therefore need to swap axes of array gas_temp
+    # before dumping it in a binary file! just like mastermind game!
+    rhogascube = np.swapaxes(rhogascube, 0, 1)  # nrad ncol nsec
+    rhogascube = np.swapaxes(rhogascube, 0, 2)  # nsec ncol nrad
     rhogascube.tofile(GASOUT)
     GASOUT.close()
     
     if par.lines_mode > 1:
+        # If writing data in an ascii file the ordering should be: nsec, ncol, nrad.
+        # We therefore need to swap axes of array gas_temp
+        # before dumping it in a binary file! just like mastermind game!
+        rhogascubeh2 = np.swapaxes(rhogascubeh2, 0, 1)  # nrad ncol nsec
+        rhogascubeh2 = np.swapaxes(rhogascubeh2, 0, 2)  # nsec ncol nrad
         rhogascubeh2.tofile(GASOUTH2)
         GASOUTH2.close()
         
@@ -175,16 +185,17 @@ def compute_gas_mass_volume_density():
         matplotlib.rc('font', family='Arial')
         fontcolor='white'
 
-        # azimuthally-averaged number density:
-        axidens = np.sum(rhogascube,axis=2)/par.gas.nsec  # (nol,nrad)
+        # azimuthally-averaged number density:   # nsec ncol nrad
+        axidens = np.sum(rhogascube,axis=0)/par.gas.nsec  # (nol,nrad)
 
         radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.tedge)
         R = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
         Z = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
 
         # midplane number density:
-        midplane_dens = rhogascube[par.gas.ncol//2-1,:,:]  # (nrad,nsec)
-
+        midplane_dens = rhogascube[:,par.gas.ncol//2-1,:]  # (nsec,nrad)
+        midplane_dens = np.swapaxes(midplane_dens, 0, 1)   # (nrad,nsec)
+        
         radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
         X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
         Y = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
@@ -273,7 +284,7 @@ def compute_gas_mass_volume_density():
     # print max of gas mass volume density at each colatitude
     if par.verbose == 'Yes':
         for j in range(par.gas.ncol):
-            print('max(rho_dustcube) for gas species at colatitude index j = ', j, ' = ', rhogascube[j,:,:].max())
+            print('max(rho_dustcube) for gas species at colatitude index j = ', j, ' = ', rhogascube[:,j,:].max())
 
     # free RAM memory
     del rhogascube,rhogascubeh2,rhogascube_cyl,rhogascubeh2_cyl

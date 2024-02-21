@@ -56,6 +56,8 @@ def exportfits():
             else:
                 lbda0 = par.wavelength*1e3 # in microns
 
+        print('lbda [microns] = ', lbda0)
+                
         # next line in image.out is empty
         f.readline()               
 
