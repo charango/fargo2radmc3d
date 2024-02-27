@@ -275,9 +275,12 @@ if (RTdust_or_gas == 'gas' or RTdust_or_gas == 'both'):
 
 if (RTdust_or_gas == 'both' and subtract_continuum == 'Yes'):
     outfile += '_contsub'
+    outfile_dust = 'dustsub_' + outfile
    
 outputfitsfile = outfile+'.fits'
-
+if (RTdust_or_gas == 'both' and subtract_continuum == 'Yes'):
+    outputfitsfile_dust = outfile_dust+'.fits'
+    
 if os.path.isfile(outputfitsfile) == False and recalc_rawfits == 'No':
     print('file '+outputfitsfile+' is missing, I need to activate recalc_rawfits')
     recalc_rawfits = 'Yes'

@@ -159,7 +159,7 @@ def plot_gas_temperature():
     if ( (par.RTdust_or_gas == 'gas') or (par.RTdust_or_gas == 'both' and par.Tdust_eq_Thydro == 'No' and par.Tdust_eq_Tgas == 'No') ):
         gas_temp = np.fromfile('gas_temperature.binp', dtype='float64')
         gas_temp = gas_temp[3:]
-        gas_temp = gas_temp.reshape(par.gas.nsec,par.gas.ncol,par.gas.nrad) # nbin nsec ncol nrad
+        gas_temp = gas_temp.reshape(par.gas.nsec,par.gas.ncol,par.gas.nrad) # nsec ncol nrad
 
         # Let's reswap axes! -> ncol, nrad, nsec
         gas_temp = np.swapaxes(gas_temp, 0, 1)  # ncol nsec nrad

@@ -19,12 +19,17 @@ from polar import *
 # -------------------
 # Produce final image
 # -------------------
-def produce_final_image():
+def produce_final_image(input=''):
 
-    f = fits.open(par.outputfitsfile)
-
-    # remove .fits extension
-    outfile = os.path.splitext(par.outputfitsfile)[0]
+    if input == '':
+        f = fits.open(par.outputfitsfile)
+        # remove .fits extension
+        outfile = os.path.splitext(par.outputfitsfile)[0]
+    elif input == 'dust':
+        print('here par.RTdust_or_gas = ', par.RTdust_or_gas)
+        f = fits.open(par.outputfitsfile_dust)
+        # remove .fits extension
+        outfile = os.path.splitext(par.outputfitsfile_dust)[0]
 
     if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
         outfile += '_mask'+str(par.mask_radius)

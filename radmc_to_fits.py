@@ -146,6 +146,9 @@ def exportfits():
             # close image file image.out
             f.close()
 
+            # now that image.fits is created, no need to keep image.out!
+            os.system('rm -f image.out')
+            
         else:
             # image.fits is already present, no need to keep image.out!
             os.system('rm -f image.out')
@@ -230,10 +233,9 @@ def exportfits():
 
         for k in range(5):
             # sometimes the intensity has a value at the origin that
-            # is unrealistically large. We put it to zero at the
+            # is unrealistically large. We put it to zero *around* the
             # origin, as it should be in our disc model!
-            im[k,im_ny//2,im_nx//2] = 0.0
-            im[k,im_ny//2+1,im_nx//2+1] = 0.0
+            im[k,im_ny//2-1:im_ny//2+1,im_nx//2-1:im_nx//2+1] = 0.0
 
     # - - - - - -
     # line or dust+line RT calculations
@@ -246,23 +248,15 @@ def exportfits():
         im0     = np.zeros((im_ny,im_nx))
             
         for i in range(nlam):
+            print('channel '+str(i)+' out of '+str(nlam),end='\r')
             im_v = images[i*im_ny*im_nx:(i+1)*im_ny*im_nx]
             im = im_v.reshape(im_ny,im_nx)
-            # sometimes the intensity has a value at the origin
-            # that is unrealistically large, in particular when
-            # the velocity relative to the systemic one is
-            # large. We put the specific intensity to zero at the
-            # origin, as it should be in our disc model!
-            im[im_ny//2,im_nx//2] = 0.0
-
-            # dust continuum emission is removed by subtracting the
-            # very first channel map (you need to make sure that the
-            # very first channel map does not contain significant
-            # information on gas emission...):
-            if (par.RTdust_or_gas == 'both' and par.subtract_continuum == 'Yes'):
-                if i==0:
-                    im0 = im
-                im = im - im0
+            # sometimes the intensity has a value at the origin that
+            # is unrealistically large, in particular when the
+            # velocity relative to the systemic one is large. We put
+            # the specific intensity to zero around the origin, as it
+            # should be in our disc model!
+            im[im_ny//2-1:im_ny//2+1,im_nx//2-1:im_nx//2+1] = 0.0
                 
             # ---
             if (par.add_noise == 'Yes'):
@@ -275,6 +269,15 @@ def exportfits():
                 noise_array = noise_array.reshape(im_ny,im_nx)
                 im += noise_array
             # ---
+
+            # dust continuum emission is removed by subtracting the
+            # very first channel map (you need to make sure that the
+            # very first channel map does not contain significant
+            # information on gas emission...):
+            if (par.RTdust_or_gas == 'both' and par.subtract_continuum == 'Yes'):
+                if i==0:
+                    im0 = im
+                im = im - im0
                 
             # keep track of beam-convolved specific intensity in each channel map
             if par.plot_tau == 'No':
@@ -354,6 +357,42 @@ def exportfits():
 
     if par.plot_tau == 'No' and par.verbose == 'Yes':
         print("Total flux [Jy] = "+str(np.sum(hdu.data)))
+
+
+    # if dust continuum emission has been subtracted, keep track of it
+    # in a separate fits file
+    if (par.RTdust_or_gas == 'both' and par.subtract_continuum == 'Yes'):
+        # Fits header
+        hdu = fits.PrimaryHDU()
+        hdu.header['BITPIX'] = -32
+        hdu.header['NAXIS'] = 2
+        hdu.header['NAXIS1'] = im_nx
+        hdu.header['NAXIS2'] = im_ny
+        hdu.header['EPOCH']  = 2000.0
+        hdu.header['EQUINOX'] = 2000.0
+        hdu.header['LONPOLE'] = 180.0
+        hdu.header['CTYPE1'] = 'RA---SIN'
+        hdu.header['CTYPE2'] = 'DEC--SIN'
+        hdu.header['CRVAL1'] = float(0.0)
+        hdu.header['CRVAL2'] = float(0.0)
+        hdu.header['CDELT1'] = float(-1.*pixsize_x_deg)
+        hdu.header['CDELT2'] = float(pixsize_y_deg)
+        hdu.header['LBDAMIC'] = float(lbda0)
+        hdu.header['CUNIT1'] = 'deg     '
+        hdu.header['CUNIT2'] = 'deg     '
+        hdu.header['CRPIX1'] = float((im_nx+1.)/2.)
+        hdu.header['CRPIX2'] = float((im_ny+1.)/2.)
+        hdu.header['BUNIT'] = 'Jy/pixel'
+        hdu.header['BTYPE'] = 'Intensity'
+        hdu.header['BSCALE'] = float(1.0)
+        hdu.header['BZERO'] = float(0.0)
+        del hdu.header['EXTEND']
+        # conversion of the intensity from erg/s/cm^2/Hz/steradian to Jy/pix
+        if par.plot_tau == 'No' and par.moment_order != 1:
+            im0 = im0*fluxfactor
+        #
+        hdu.data = im0.astype('float32')
+        hdu.writeto(par.outputfitsfile_dust, output_verify='fix', overwrite=True)
 
         
     # ----------

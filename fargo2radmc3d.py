@@ -16,8 +16,6 @@
 # - add text banner with 'banner' command
 # - results from actual 3D simulations from Fargo3D (check
 # fargo2python): check latitude expression in mesh.py
-# - plot dust-to-gas density ratio in prevision that I could use that
-# quantity to customize species-to-gas abundance ratio?
 # - check again that all goes well without x-axisflip!
 # =================================
 
@@ -186,6 +184,8 @@ if par.RTdust_or_gas == 'both':
             plot_dust_density('before')
         else:
             plot_dust_density('')
+        print('--------- Plotting dust-to-gas density ----------')
+        plot_dust_to_gas_density()
             
     # calculation of dust opacities follows now
     from dust_opacities import *
@@ -276,7 +276,14 @@ if (par.recalc_rawfits == 'Yes'):
 if par.recalc_fluxmap == 'Yes':
     print('--------- Convolving and writing final image ----------')
     from final_image import *
-    produce_final_image()
+    produce_final_image('')
 
+    # if both line and dust transfer are done, and that continuum is
+    # subtracted, call produce_final_image a second time to display
+    # dust continuum emission (first time it is called, it is used to
+    # display gas moment 0/1 emission):
+    if (par.RTdust_or_gas == 'both' and par.subtract_continuum == 'Yes'):
+        par.RTdust_or_gas = 'dust'
+        produce_final_image('dust')
 
 print('--------- Done! ----------')

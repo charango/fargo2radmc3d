@@ -594,7 +594,7 @@ def recompute_dust_mass_volume_density():
     
         
 # =========================
-# Display dust temperature on RADMC 3D grid
+# Display dust density on RADMC 3D grid
 # =========================
 def plot_dust_density(mystring):
 
@@ -605,7 +605,7 @@ def plot_dust_density(mystring):
     # Let's reswap axes! -> ncol, nbin, nrad, nsec
     rhodustcube = np.swapaxes(rhodustcube, 0, 1)  # nsec nbin ncol nrad
     rhodustcube = np.swapaxes(rhodustcube, 0, 2)  # ncol nbin nsec nrad
-    rhodustcube = np.swapaxes(rhodustcube, 2, 3)  # ncol nbin nrad nrad
+    rhodustcube = np.swapaxes(rhodustcube, 2, 3)  # ncol nbin nrad nsec
     
     from mpl_toolkits.axes_grid1 import make_axes_locatable
     import matplotlib.ticker as ticker
@@ -811,4 +811,85 @@ def plot_dust_density(mystring):
 
         
     # free RAM memory
+    del rhodustcube
+
+
+
+# =========================
+# Display dust-to-gas density ratio on RADMC 3D grid
+# =========================
+def plot_dust_to_gas_density():
+
+    dens = np.fromfile('dust_density.binp', dtype='float64')
+    rhodustcube = dens[4:]
+    rhodustcube = rhodustcube.reshape(par.nbin,par.gas.nsec,par.gas.ncol,par.gas.nrad) # nbin nsec ncol nrad
+
+    # Let's reswap axes! -> ncol, nbin, nrad, nsec
+    rhodustcube = np.swapaxes(rhodustcube, 0, 1)  # nsec nbin ncol nrad
+    rhodustcube = np.swapaxes(rhodustcube, 0, 2)  # ncol nbin nsec nrad
+    rhodustcube = np.swapaxes(rhodustcube, 2, 3)  # ncol nbin nrad nsec
+
+    # total dust density obtained by summing over dust bins
+    total_dust_density = np.sum(rhodustcube,axis=1)  # ncol nrad nsec
+
+    # now read number density of gas species
+    file = 'numberdens_'+str(par.gasspecies)+'.binp'
+    total_gas_density = np.fromfile(file, dtype='float64')      
+    total_gas_density = total_gas_density[3:]
+    total_gas_density = total_gas_density*2.3*par.mp/par.abundance      # back to g / cm^3
+    total_gas_density = total_gas_density.reshape(par.gas.ncol,par.gas.nrad,par.gas.nsec) # ncol nrad nsec
+
+    # define dust-to-gas density ratio
+    dust_to_gas_density_ratio = total_dust_density/total_gas_density    # ncol nrad nsec
+
+    # midplane quantity:
+    midplane_dust_to_gas_density_ratio = dust_to_gas_density_ratio[par.gas.ncol//2-1,:,:] # nrad nsec
+
+    # X and Y arrays
+    radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
+    X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
+    Y = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
+    
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+    import matplotlib.ticker as ticker
+    from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
+    matplotlib.rcParams.update({'font.size': 20})
+    matplotlib.rc('font', family='Arial')
+    fontcolor='white'
+    
+    print('--------- plotting midplane dust-to-gas density ratio   ----------')
+
+    fig = plt.figure(figsize=(8.,8.))
+    plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+    ax = plt.gca()
+    ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+    ax.tick_params(axis='x', which='minor', top=True)
+    ax.tick_params(axis='y', which='minor', right=True)
+    
+    ax.set_xlabel('x [au]')
+    ax.set_ylabel('y [au]')
+    ax.set_ylim(Y.min(),Y.max())
+    ax.set_xlim(X.min(),X.max())
+
+    if midplane_dust_to_gas_density_ratio.max()/midplane_dust_to_gas_density_ratio.min() > 1e3:
+        mynorm = matplotlib.colors.LogNorm(vmin=1e-3*midplane_dust_to_gas_density_ratio.max(),vmax=midplane_dust_to_gas_density_ratio.max())
+    else:
+        mynorm = matplotlib.colors.LogNorm(vmin=midplane_dust_to_gas_density_ratio.min(),vmax=midplane_dust_to_gas_density_ratio.max())
+    midplane_dust_to_gas_density_ratio = np.transpose(midplane_dust_to_gas_density_ratio)
+    CF = ax.pcolormesh(X,Y,midplane_dust_to_gas_density_ratio,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="2.5%", pad=0.12)
+    cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+    cax.xaxis.tick_top()
+    cax.xaxis.set_tick_params(labelsize=20, direction='out')
+
+    cax.xaxis.set_label_position('top')
+    cax.set_xlabel('midplane dust-to-gas density ratio')
+    cax.xaxis.labelpad = 8
+        
+    fileout = 'midplane_dg_ratio.pdf'
+    plt.savefig('./'+fileout, dpi=160)
+    plt.close(fig)  # close figure as we reopen figure at every output number
+
     del rhodustcube
