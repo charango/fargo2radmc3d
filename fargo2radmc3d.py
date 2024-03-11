@@ -256,6 +256,12 @@ if par.recalc_radmc == 'Yes':
             if par.plot_dust_quantities == 'Yes':
                 print('--------- Plotting again dust temperature ----------')
                 plot_dust_temperature('after')
+
+        # Recompute gas density to take freeze out into account
+        if par.freezeout == 'Yes':
+            print('--------- Computing again gas density (freeze-out) ----------')
+            recompute_gas_mass_volume_density()
+            
                 
     # Now run RADMC3D
     print('--------- Now executing RADMC3D ----------')

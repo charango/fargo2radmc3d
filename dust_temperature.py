@@ -109,8 +109,9 @@ def plot_dust_temperature(mystring):
     Y = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
 
     surftemp = Temp[:,:,par.gas.ncol-1,:]  # nbin nsec nrad
+    midtemp  = Temp[:,:,par.gas.ncol//2-1,:]  # nbin nsec nrad
 
-    mynorm = matplotlib.colors.Normalize(vmin=surftemp.min(),vmax=surftemp.max())
+    mynorm = matplotlib.colors.Normalize(vmin=midtemp.min(),vmax=midtemp.max())
     
     # Loop over size bins:
     for l in range(par.nbin):
@@ -127,7 +128,7 @@ def plot_dust_temperature(mystring):
         ax.set_ylim(Y.min(),Y.max())
         ax.set_xlim(X.min(),X.max())
                
-        CF = ax.pcolormesh(X,Y,surftemp[l,:,:],cmap='nipy_spectral',norm=mynorm,rasterized=True)
+        CF = ax.pcolormesh(X,Y,midtemp[l,:,:],cmap='nipy_spectral',norm=mynorm,rasterized=True)
 
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("top", size="2.5%", pad=0.12)
@@ -137,7 +138,7 @@ def plot_dust_temperature(mystring):
 
         # title on top
         cax.xaxis.set_label_position('top')
-        cax.set_xlabel('dust surface temperature '+r'[K]')
+        cax.set_xlabel('dust midplane temperature '+r'[K]')
         cax.xaxis.labelpad = 8
 
         # show dust size in bottom-left corner:
@@ -148,12 +149,12 @@ def plot_dust_temperature(mystring):
         ax.text(xstr,ystr,strsize, fontsize=20, color = 'black',weight='bold',horizontalalignment='left', verticalalignment='top')
 
         if par.dustsublimation == 'No':
-            fileout = 'dustsurface_temperature_'+str(l).zfill(2)+'.pdf'
+            fileout = 'dustmidplane_temperature_'+str(l).zfill(2)+'.pdf'
         else:
             if 'before' in mystring:
-                fileout = 'dustsurface_temperature_'+str(l).zfill(2)+'_before_subl.pdf'
+                fileout = 'dustmidplane_temperature_'+str(l).zfill(2)+'_before_subl.pdf'
             if 'after' in mystring:
-                fileout = 'dustsurface_temperature_'+str(l).zfill(2)+'_after_subl.pdf'
+                fileout = 'dustmidplane_temperature_'+str(l).zfill(2)+'_after_subl.pdf'
         
         plt.savefig('./'+fileout, dpi=160)
         plt.close(fig)  # close figure as we reopen figure at every output number

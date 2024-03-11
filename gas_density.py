@@ -88,7 +88,7 @@ def compute_gas_mass_volume_density():
         
     # Simple modelling of freezeout: drop CO number density whereever
     # azimuthally-averaged gas temperature falls below 19K:
-    if par.freezeout == 'Yes':
+    if par.freezeout == 'Yes' and par.Tdust_eq_Thydro == 'Yes':
         print('--------- apply freezeout model ----------')
         buf = np.fromfile('gas_tempcyl.binp', dtype='float64')
         buf = buf[3:]
@@ -289,3 +289,146 @@ def compute_gas_mass_volume_density():
     # free RAM memory
     del rhogascube,rhogascubeh2,rhogascube_cyl,rhogascubeh2_cyl
     
+
+# =========================
+# Recompute gas mass volume density for freeze-out
+# =========================
+def recompute_gas_mass_volume_density():
+
+    # Start by reading dust temperature, the .bdat file is produced by
+    # a thermal MC run with RADMC-3D
+    Temp = np.fromfile('dust_temperature.bdat', dtype='float64')
+    Temp = Temp[4:]
+    Temp = Temp.reshape(par.nbin,par.gas.nsec,par.gas.ncol,par.gas.nrad) # nbin nsec ncol nrad
+    gastemp = Temp[par.nbin-1,:,:,:]
+    
+    # Then read again dust_density.binp file
+    gasfile = 'numberdens_'+str(par.gasspecies)+'.binp'
+    dens = np.fromfile(gasfile, dtype='float64')
+    rhogascube = dens[3:]
+    rhogascube = rhogascube.reshape(par.gas.nsec,par.gas.ncol,par.gas.nrad) # nsec ncol nrad
+
+    # all relevant quantities below are in in cgs
+    for k in range(par.gas.nsec):
+        for j in range(par.gas.ncol):
+            for i in range(par.gas.nrad):
+                if gastemp[k,j,i] < 19.0:
+                    print(gastemp[k,j,i])
+                    rhogascube[k,j,i] *= 1e-5
+
+    # Binary output files
+    GASOUT = open('numberdens_%s.binp'%par.gasspecies,'wb')    # binary format
+
+    # requested header
+    hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol], dtype=int)
+    hdr.tofile(GASOUT)
+    rhogascube.tofile(GASOUT)
+    GASOUT.close()
+
+    # replot gas number density
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+    import matplotlib.ticker as ticker
+    from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
+        
+    matplotlib.rcParams.update({'font.size': 20})
+    matplotlib.rc('font', family='Arial')
+    fontcolor='white'
+
+    # azimuthally-averaged number density:   # nsec ncol nrad
+    axidens = np.sum(rhogascube,axis=0)/par.gas.nsec  # (nol,nrad)
+
+    radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.tedge)
+    R = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
+    Z = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
+
+    # midplane number density:
+    midplane_dens = rhogascube[:,par.gas.ncol//2-1,:]  # (nsec,nrad)
+    midplane_dens = np.swapaxes(midplane_dens, 0, 1)   # (nrad,nsec)
+        
+    radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
+    X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
+    Y = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
+
+    # common plot features
+    if par.gasspecies == 'co':
+        strgas = r'$^{12}$CO'
+    elif par.gasspecies == '13co':
+        strgas = r'$^{13}$CO'
+    elif par.gasspecies == 'c17o':
+        strgas = r'C$^{17}$O'
+    elif par.gasspecies == 'c18o':
+        strgas = r'C$^{18}$O'
+    else:
+        strgas = str(par.gasspecies).upper()  # capital letters
+
+        
+    print('--------- a) plotting azimuthally-averaged number density (R,z) ----------')
+
+    fig = plt.figure(figsize=(8.,8.))
+    plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+    ax = plt.gca()
+    ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+    ax.tick_params(axis='x', which='minor', top=True)
+    ax.tick_params(axis='y', which='minor', right=True)
+
+    ax.set_xlabel('Radius [au]')
+    ax.set_ylabel('Altitude [au]')
+    ax.set_ylim(Z.min(),Z.max())
+    ax.set_xlim(R.min(),R.max())
+
+    mynorm = matplotlib.colors.LogNorm(vmin=axidens.min(),vmax=axidens.max())
+    CF = ax.pcolormesh(R,Z,axidens,cmap='nipy_spectral',norm=mynorm)
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="2.5%", pad=0.12)
+    cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+    cax.xaxis.tick_top()
+    cax.xaxis.set_tick_params(labelsize=20, direction='out')
+    cax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=10))
+
+    cax.xaxis.set_label_position('top')
+    cax.set_xlabel(strgas+' number density '+r'[cm$^{-3}$]')
+    cax.xaxis.labelpad = 8
+        
+    fileout = 'gas_number_density_Rz_fzout.pdf'
+    plt.savefig('./'+fileout, dpi=160)
+
+
+    print('--------- b) plotting midplane number density (x,y) ----------')
+
+    fig = plt.figure(figsize=(8.,8.))
+    plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+    ax = plt.gca()
+    ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+    ax.tick_params(axis='x', which='minor', top=True)
+    ax.tick_params(axis='y', which='minor', right=True)
+
+    ax.set_xlabel('x [au]')
+    ax.set_ylabel('y [au]')
+    ax.set_ylim(Y.min(),Y.max())
+    ax.set_xlim(X.min(),X.max())
+
+    if midplane_dens.max()/midplane_dens.min() > 1e3:
+        mynorm = matplotlib.colors.LogNorm(vmin=1e-3*midplane_dens.max(),vmax=midplane_dens.max())
+    else:
+        mynorm = matplotlib.colors.LogNorm(vmin=midplane_dens.min(),vmax=midplane_dens.max())
+    midplane_dens = np.transpose(midplane_dens)
+    CF = ax.pcolormesh(X,Y,midplane_dens,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="2.5%", pad=0.12)
+    cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+    cax.xaxis.tick_top()
+    cax.xaxis.set_tick_params(labelsize=20, direction='out')
+
+    cax.xaxis.set_label_position('top')
+    cax.set_xlabel(strgas+' midplane number density '+r'[cm$^{-3}$]')
+    cax.xaxis.labelpad = 8
+        
+    fileout = 'gas_number_density_midplane_fzout.pdf'
+    plt.savefig('./'+fileout, dpi=160)
+    plt.close(fig)  # close figure as we reopen figure at every output number
+
+    
+    # finally delete memory
+    del rhogascube, gastemp, Temp
