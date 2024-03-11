@@ -493,6 +493,9 @@ def produce_final_image(input=''):
             yp = ypla[par.on] # in disc simulation plane
             if par.xaxisflip == 'Yes':
                 xp = -xp
+            else:
+                xp = -xp  # cuidadin
+                yp = -yp  # cuidadin
             print('planet position on simulation plane [code units]: xp = ', xp, ' and yp = ', yp)
             
             # convert from simulation units to arcsecond:
