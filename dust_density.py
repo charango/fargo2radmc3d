@@ -824,27 +824,20 @@ def plot_dust_to_gas_density():
     rhodustcube = dens[4:]
     rhodustcube = rhodustcube.reshape(par.nbin,par.gas.nsec,par.gas.ncol,par.gas.nrad) # nbin nsec ncol nrad
 
-    # Let's reswap axes! -> ncol, nbin, nrad, nsec
-    rhodustcube = np.swapaxes(rhodustcube, 0, 1)  # nsec nbin ncol nrad
-    rhodustcube = np.swapaxes(rhodustcube, 0, 2)  # ncol nbin nsec nrad
-    rhodustcube = np.swapaxes(rhodustcube, 2, 3)  # ncol nbin nrad nsec
-
     # total dust density obtained by summing over dust bins
-    total_dust_density = np.sum(rhodustcube,axis=1)  # ncol nrad nsec
-
+    total_dust_density = np.sum(rhodustcube,axis=0)  # nsec ncol nrad
+    
     # now read number density of gas species
     file = 'numberdens_'+str(par.gasspecies)+'.binp'
-    total_gas_density = np.fromfile(file, dtype='float64')      
-    total_gas_density = total_gas_density[3:]
-    total_gas_density = total_gas_density*2.3*par.mp/par.abundance      # back to g / cm^3
-    total_gas_density = total_gas_density.reshape(par.gas.ncol,par.gas.nrad,par.gas.nsec) # ncol nrad nsec
+    gas = np.fromfile(file, dtype='float64')      
+    rhogascube = gas[3:]
+    rhogascube = rhogascube*2.3*par.mp/par.abundance      # back to g / cm^3
+    total_gas_density = rhogascube.reshape(par.gas.nsec,par.gas.ncol,par.gas.nrad) # nsec ncol nrad
 
     # define dust-to-gas density ratio
-    dust_to_gas_density_ratio = total_dust_density/total_gas_density    # ncol nrad nsec
-
-    # midplane quantity:
-    midplane_dust_to_gas_density_ratio = dust_to_gas_density_ratio[par.gas.ncol//2-1,:,:] # nrad nsec
-
+    dust_to_gas_density_ratio = total_dust_density/total_gas_density    # nsec ncol nrad
+    midplane_dust_to_gas_density_ratio = dust_to_gas_density_ratio[:,par.gas.ncol//2-1,:] # nsec nrad  
+    
     # X and Y arrays
     radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
     X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
@@ -871,11 +864,11 @@ def plot_dust_to_gas_density():
     ax.set_ylim(Y.min(),Y.max())
     ax.set_xlim(X.min(),X.max())
 
-    if midplane_dust_to_gas_density_ratio.max()/midplane_dust_to_gas_density_ratio.min() > 1e3:
-        mynorm = matplotlib.colors.LogNorm(vmin=1e-3*midplane_dust_to_gas_density_ratio.max(),vmax=midplane_dust_to_gas_density_ratio.max())
-    else:
-        mynorm = matplotlib.colors.LogNorm(vmin=midplane_dust_to_gas_density_ratio.min(),vmax=midplane_dust_to_gas_density_ratio.max())
-    midplane_dust_to_gas_density_ratio = np.transpose(midplane_dust_to_gas_density_ratio)
+    # Min and max currently being hardcoded...
+    mymin = 1e-2*midplane_dust_to_gas_density_ratio.max()   # 0.01
+    mymax = midplane_dust_to_gas_density_ratio.max()        # 10.0
+    mynorm = matplotlib.colors.LogNorm(vmin=mymin,vmax=mymax)
+    
     CF = ax.pcolormesh(X,Y,midplane_dust_to_gas_density_ratio,cmap='nipy_spectral',norm=mynorm,rasterized=True)
 
     divider = make_axes_locatable(ax)

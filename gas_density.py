@@ -20,7 +20,7 @@ def compute_gas_mass_volume_density():
     
     # Artificially make a cavity devoid of gas (test)
     if ('cavity_gas' in open('params.dat').read()) and (par.cavity_gas == 'Yes'):
-        imin = np.argmin(np.abs(par.gas.rmed-1.3))
+        imin = np.argmin(np.abs(par.gas.rmed-1.0))
         for i in range(par.gas.nrad):
             if i < imin:
                 for j in range(par.gas.nsec):
@@ -312,7 +312,7 @@ def recompute_gas_mass_volume_density():
     for k in range(par.gas.nsec):
         for j in range(par.gas.ncol):
             for i in range(par.gas.nrad):
-                if gastemp[k,j,i] < 19.0:
+                if gastemp[k,j,i] < 30.0:
                     print(gastemp[k,j,i])
                     rhogascube[k,j,i] *= 1e-5
 
