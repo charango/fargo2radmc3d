@@ -238,7 +238,7 @@ def compute_dust_mass_surface_density():
             
         # Overwrite first bin (ibin = 0) to model extra bin with small dust tightly coupled to the gas
         if par.bin_small_dust == 'Yes':
-            frac[0] *= 5e3
+            frac[0] *= 1e3
             if par.verbose == 'Yes':
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!")
                 print("Bin with index 0 changed to include arbitrarilly small dust tightly coupled to the gas")

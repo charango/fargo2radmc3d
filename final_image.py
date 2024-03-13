@@ -491,6 +491,19 @@ def produce_final_image(input=''):
         if (('spot_planet' in open('params.dat').read()) and (par.spot_planet == 'Yes')):
             xp = xpla[par.on] # in disc simulation plane
             yp = ypla[par.on] # in disc simulation plane
+
+            # NEW (March 2024): case there is more than just one planet!
+            if os.path.isfile(par.dir+"/planet1.dat") == True:
+                print('Two planets to be displayed..')
+                if fargo3d == 'Yes':
+                    f1, xpla, ypla, f4, f5, f6, f7, f8, date, omega = np.loadtxt(par.dir+"/planet1.dat",unpack=True)
+                else:
+                    f1, xpla, ypla, f4, f5, f6, f7, date, omega, f10, f11 = np.loadtxt(par.dir+"/planet1.dat",unpack=True)
+                xp = np.array([xp,xpla[par.on]])
+                yp = np.array([yp,ypla[par.on]])
+                print('xp = ', xp)
+                print('yp = ', yp)
+                
             if par.xaxisflip == 'Yes':
                 xp = -xp
             else:
@@ -528,7 +541,7 @@ def produce_final_image(input=''):
             inclination_in_rad = par.inclination*np.pi/180.0
             xp_sky =  (xp*np.cos(phiangle_in_rad)+yp*np.sin(phiangle_in_rad))*np.cos(posangle_in_rad) + (-xp*np.sin(phiangle_in_rad)+yp*np.cos(phiangle_in_rad))*np.cos(inclination_in_rad)*np.sin(posangle_in_rad)
             yp_sky = -(xp*np.cos(phiangle_in_rad)+yp*np.sin(phiangle_in_rad))*np.sin(posangle_in_rad) + (-xp*np.sin(phiangle_in_rad)+yp*np.cos(phiangle_in_rad))*np.cos(inclination_in_rad)*np.cos(posangle_in_rad)
-            print('planet position on sky-plane [arcseconds]: xp = ', xp_sky, ' and yp_sky = ', yp_sky)
+            print('planet position on sky-plane [arcseconds]: xp_sky = ', xp_sky, ' and yp_sky = ', yp_sky)
             ax.plot(xp_sky,yp_sky,'x',color='white',markersize=10)
     
     # Add + sign at the origin
@@ -676,13 +689,22 @@ def produce_final_image(input=''):
         if (('spot_planet' in open('params.dat').read()) and (par.spot_planet == 'Yes')):
             import math
             xp_proj = xp_sky
-            yp_proj = yp_sky #/ np.cos(inclination_in_rad)
+            yp_proj = yp_sky / np.abs(np.cos(inclination_in_rad)) # cuidadin
+            print('xp_proj = ', xp_proj)
+            print('yp_proj = ', yp_proj)
             rp_proj = np.sqrt(xp_proj*xp_proj + yp_proj*yp_proj)
             # in degrees, measured earth of north
-            tp_proj = (np.pi + math.atan(yp_proj/xp_proj))*180./np.pi
+            dim = len(xp_proj)
+            tp_proj = np.zeros(dim)
+            for i in range(dim):
+                tp_proj[i] = (np.pi/2.0 + math.atan2(-yp_proj[i],xp_proj[i]))*180./np.pi
+                if tp_proj[i] < -180.0:
+                    tp_proj[i] += 360.0
+                if tp_proj[i] > 180.0:
+                    tp_proj[i] -= 360.0
             print('planet position on deprojected sky-plane: rp ["] = ', rp_proj, ' and tp_proj [deg] = ', tp_proj)
             ax.plot(tp_proj,rp_proj,'x',color='white',markersize=10)
-            
+
         # plot color-bar
         from mpl_toolkits.axes_grid1 import make_axes_locatable
         divider = make_axes_locatable(ax)
