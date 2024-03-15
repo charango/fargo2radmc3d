@@ -141,8 +141,8 @@ def gridding(imagefile_1, imagefile_2,fileout=False,fullWCS=True):
     
     n2x = hdr2['NAXIS1']
     n2y = hdr2['NAXIS2']
-    k2s=sp.arange(0,n2x)
-    l2s=sp.arange(0,n2y)
+    k2s=np.arange(0,n2x)
+    l2s=np.arange(0,n2y)
     kk2s, ll2s = sp.meshgrid(k2s, l2s)
 
     if (fullWCS):
