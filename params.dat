@@ -57,7 +57,7 @@ plot_dust_quantities	Yes	  # if yes, plot for smallest and largest bin: midplane
 recalc_opac		Yes	  # do we recompute dust opacities?
 polarized_scat		No	  # do we assume polarized scattering?
 wavelength		2.0	  # wavelength in mm
-nbcores			20	  # how many cores do we use for radmc3D calculation?
+nbcores			1	  # how many cores do we use for radmc3D calculation?
 scat_mode		2	  # scattering mode max parameter (0: absorption, 2: anisotropic scattering)
 nb_photons		3e6	  # number of photos for raytracing
 nb_photons_scat		3e6	  # number of photos for raytracing (scattering)
