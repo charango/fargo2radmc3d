@@ -693,6 +693,11 @@ def produce_final_image(input=''):
             print('xp_proj = ', xp_proj)
             print('yp_proj = ', yp_proj)
             rp_proj = np.sqrt(xp_proj*xp_proj + yp_proj*yp_proj)
+
+            if isinstance(xp_proj, float) == True:
+                xp_proj = [xp_proj]
+                yp_proj = [yp_proj]
+            
             # in degrees, measured earth of north
             dim = len(xp_proj)
             tp_proj = np.zeros(dim)
