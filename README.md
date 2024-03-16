@@ -7,4 +7,4 @@ Dust opacities can be computed with bhmie.py, which is a python version of the B
 
 Please have a look at the documentation (8 pages) to check how the code works and what the different options and parameters in params.dat are.
 
-NB: for the program to run properly, you need to have gawk and curl installed. You also need the executable 'radmc3d' to be callable as a command line on the terminal (you can do so by editing your .bashrc file if you use bash by exporting the full directory to the radmc3d executable into the PATH global environment).
+NB: for the program to run, you need to have commands awk/gawk and curl installed, as well as the scipy and astropy python libraries. You also need the executable 'radmc3d' to be callable as a command line on the terminal (you can do so by editing your .bashrc file if you use bash by exporting the full directory to the radmc3d executable into the PATH global environment).
