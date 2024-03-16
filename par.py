@@ -6,6 +6,8 @@ import os
 import re
 import subprocess
 
+from shutil import which
+
 # -----------------------------
 # global constants in cgs units
 # -----------------------------
@@ -80,7 +82,7 @@ if verbose == 'Yes':
 # -------------------------        
 # Below we work out specific parameters and/or error messages
 # -------------------------
-
+        
 # was simulation carried out with Fargo3D?
 hydro2D = 'Yes'
 fargo3d = 'No'
@@ -90,11 +92,20 @@ if os.path.isfile(dir+'/variables.par') == True:
 if fargo3d == 'No':
     dustfluids = 'No'
     
+# Check whether awk or gawk are installed!
+if which('gawk') is not None:
+    awk_command = 'gawk'
+else:
+    if which('awk') is not None:
+        awk_command = 'awk'
+    else:
+        print('neither gawk not awk are installed on your system! I cannot use them to extract relevant parameters from your .par parameter file in the simulation directory. Please install either awk or gawk.')
 
+        
 # Check if Fargo3D simulation was carried out in 2D or in 3D by
 # fetching NZ in the variables.par file:
 if fargo3d == 'Yes':
-    command = 'awk " /^NZ/ " '+dir+'/*.par'
+    command = awk_command+' " /^NZ/ " '+dir+'/*.par'
     if sys.version_info[0] < 3:
         buf = subprocess.check_output(command, shell=True)
     else:
@@ -136,6 +147,10 @@ if RTdust_or_gas == 'both':
 if recalc_radmc == 'Yes':
     recalc_rawfits = 'Yes'
     recalc_fluxmap = 'Yes'
+    # Check if radmc3d is installed / available
+    if which('radmc3d') is None:
+        sys.exit('The executable "radmc3d" is not known by your system, so I will not be able to run it. Please check that radmc3d is installed indeed and that it can be called via the radmc3d command in any directory on your architecture. This may require to add radmc3d in the "PATH" global environment in your .abshrc file (if you are using bash).')
+    
 if recalc_rawfits == 'Yes':
     recalc_fluxmap = 'Yes'
 
@@ -180,7 +195,7 @@ bpaangle = -90.0-bpaangle
 
 # Dust global parameters in Fargo3D simulations
 if fargo3d == 'Yes' and (RTdust_or_gas == 'dust' or RTdust_or_gas == 'both'):
-    command = 'awk " /^DUSTINTERNALRHO/ " '+dir+'/variables.par'
+    command = awk_command+' " /^DUSTINTERNALRHO/ " '+dir+'/variables.par'
     # check which version of python we're using
     if sys.version_info[0] < 3:   # python 2.X
         buf = subprocess.check_output(command, shell=True)
@@ -213,7 +228,7 @@ if fargo3d == 'Yes' and (RTdust_or_gas == 'dust' or RTdust_or_gas == 'both'):
         amax = dust_size.max()
         bins = np.logspace(np.log10(amin), np.log10(amax), nbin)   
         ratio = np.sum(dust_gas_ratio)
-        command = 'awk " /^DUSTSLOPEDIST/ " '+dir+'/variables.par'
+        command = awk_command+' " /^DUSTSLOPEDIST/ " '+dir+'/variables.par'
         # check which version of python we're using
         if sys.version_info[0] < 3:   # python 2.X
             buf = subprocess.check_output(command, shell=True)
@@ -300,7 +315,7 @@ if not('dustdens_eq_gasdens' in open('params.dat').read()):
 # radmc3d is not called get the aspect ratio and flaring index used in
 # the numerical simulation note that this works both for Dusty
 # FARGO-ADSG and FARGO3D simulations
-command = 'gawk " BEGIN{IGNORECASE=1} /^AspectRatio/ " '+dir+'/*.par'
+command = awk_command+' " BEGIN{IGNORECASE=1} /^AspectRatio/ " '+dir+'/*.par'
 # check which version of python we're using
 if sys.version_info[0] < 3:   # python 2.X
     buf = subprocess.check_output(command, shell=True)
@@ -310,7 +325,7 @@ aspectratio = float(buf.split()[1])
 
 # get the flaring index used in the numerical simulation note that
 # this works both for Dusty FARGO-ADSG and FARGO3D simulations
-command = 'gawk " BEGIN{IGNORECASE=1} /^FlaringIndex/ " '+dir+'/*.par'
+command = awk_command+' " BEGIN{IGNORECASE=1} /^FlaringIndex/ " '+dir+'/*.par'
 if sys.version_info[0] < 3:
     buf = subprocess.check_output(command, shell=True)
 else:
@@ -320,7 +335,7 @@ flaringindex = float(buf.split()[1])
 # get the alpha viscosity used in the numerical simulation
 if fargo3d == 'No':
     try:
-        command = 'awk " /^AlphaViscosity/ " '+dir+'/*.par'
+        command = awk_command+' " /^AlphaViscosity/ " '+dir+'/*.par'
         if sys.version_info[0] < 3:
             buf = subprocess.check_output(command, shell=True)
         else:
@@ -329,7 +344,7 @@ if fargo3d == 'No':
 # if no alphaviscosity, then try to see if a constant
 # kinematic viscosity has been used in the simulation
     except IndexError:
-        command = 'awk " /^Viscosity/ " '+dir+'/*.par'
+        command = awk_command+' " /^Viscosity/ " '+dir+'/*.par'
         if sys.version_info[0] < 3:
             buf = subprocess.check_output(command, shell=True)
         else:
@@ -339,14 +354,14 @@ if fargo3d == 'No':
         alphaviscosity = viscosity * (aspectratio**(-2.0))
 if fargo3d == 'Yes':
     try:
-        command = 'awk " /^ALPHA/ " '+dir+'/*.par'
+        command = awk_command+' " /^ALPHA/ " '+dir+'/*.par'
         if sys.version_info[0] < 3:
             buf = subprocess.check_output(command, shell=True)
         else:
             buf = subprocess.getoutput(command)
         alphaviscosity = float(buf.split()[1])
         if alphaviscosity == 0.0:
-            command = 'awk " /^NU/ " '+dir+'/*.par'
+            command = awk_command+' " /^NU/ " '+dir+'/*.par'
             if sys.version_info[0] < 3:
                 buf = subprocess.check_output(command, shell=True)
             else:
@@ -357,7 +372,7 @@ if fargo3d == 'Yes':
 # if no alphaviscosity, then try to see if a constant
 # kinematic viscosity has been used in the simulation
     except IndexError:
-        command = 'awk " /^NU/ " '+dir+'/*.par'
+        command = awk_command+' " /^NU/ " '+dir+'/*.par'
         if sys.version_info[0] < 3:
             buf = subprocess.check_output(command, shell=True)
         else:
@@ -368,7 +383,7 @@ if fargo3d == 'Yes':
             
 # get the grid's radial spacing
 if fargo3d == 'No':
-    command = 'awk " /^RadialSpacing/ " '+dir+'/*.par'
+    command = awk_command+' " /^RadialSpacing/ " '+dir+'/*.par'
     if sys.version_info[0] < 3:
         buf = subprocess.check_output(command, shell=True)
     else:

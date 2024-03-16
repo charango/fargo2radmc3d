@@ -521,7 +521,7 @@ def produce_final_image(input=''):
                     else:
                         import sys
                         import subprocess
-                        command = 'awk " /^UNITOFLENGTHAU/ " '+par.dir+'/variables.par'
+                        command = par.awk_command+' " /^UNITOFLENGTHAU/ " '+par.dir+'/variables.par'
                         # check which version of python we're using
                         if sys.version_info[0] < 3:   # python 2.X
                             buf = subprocess.check_output(command, shell=True)

@@ -48,14 +48,14 @@ class Field(Mesh):
                 self.cutemp = cutemp
             else:
                 # get units via variable.par file
-                command = 'awk " /^UNITOFLENGTHAU/ " '+directory+'variables.par'
+                command = par.awk_command+' " /^UNITOFLENGTHAU/ " '+directory+'variables.par'
                 # check which version of python we're using
                 if sys.version_info[0] < 3:   # python 2.X
                     buf = subprocess.check_output(command, shell=True)
                 else:                         # python 3.X
                     buf = subprocess.getoutput(command)
                 self.culength = float(buf.split()[1])*1.5e11  #from au to meters
-                command = 'awk " /^UNITOFMASSMSUN/ " '+directory+'variables.par'
+                command = par.awk_command+' " /^UNITOFMASSMSUN/ " '+directory+'variables.par'
                 # check which version of python we're using
                 if sys.version_info[0] < 3:   # python 2.X
                     buf = subprocess.check_output(command, shell=True)
