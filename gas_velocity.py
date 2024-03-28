@@ -437,7 +437,10 @@ def compute_gas_velocity():
         ax.set_ylim(-maxXsYs,maxXsYs)
         ax.set_xlim(maxXsYs,-maxXsYs)
 
-        mynorm = matplotlib.colors.Normalize(vmin=v_los_residual.min(),vmax=v_los_residual.max())
+        abs_min_max = v_los_residual.max()
+        if np.abs(v_los_residual.min()) > abs_min_max:
+            abs_min_max = np.abs(v_los_residual.min())
+        mynorm = matplotlib.colors.Normalize(vmin=-abs_min_max,vmax=abs_min_max)
         CF = ax.imshow(v_los_residual, cmap='RdBu_r', origin='lower', interpolation='bilinear', extent=[-maxXsYs,maxXsYs,-maxXsYs,maxXsYs], norm=mynorm, aspect='auto')
        
         # Add + sign at the origin
