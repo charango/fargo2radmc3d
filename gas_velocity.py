@@ -440,6 +440,11 @@ def compute_gas_velocity():
         abs_min_max = v_los_residual.max()
         if np.abs(v_los_residual.min()) > abs_min_max:
             abs_min_max = np.abs(v_los_residual.min())
+
+        # if max_colorscale is set in paramsf2p.dat, use this value in colorscale for the residual line of sight velocity image
+        if ( (par.min_colorscale in open('paramsf2p.dat').read()) and (par.min_colorscale == '#') and (par.max_colorscale in open('paramsf2p.dat').read()) and (par.max_colorscale != '#') ):
+            abs_min_max = par.max_colorscale
+
         mynorm = matplotlib.colors.Normalize(vmin=-abs_min_max,vmax=abs_min_max)
         CF = ax.imshow(v_los_residual, cmap='RdBu_r', origin='lower', interpolation='bilinear', extent=[-maxXsYs,maxXsYs,-maxXsYs,maxXsYs], norm=mynorm, aspect='auto')
        
