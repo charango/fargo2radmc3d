@@ -141,8 +141,8 @@ check_beam	No		# check beam is correct by adding source point at origin
 minmaxaxis	2.01		# max of x and y in intesity images (in arcseconds)
 mycolormap	nipy_spectral	# nipy_spectral, inferno, magma...
 log_colorscale	No		# display final image with log colorscale or not
-max_colorscale			# max color scale in mJy/beam or in micronJy/beam
-min_colorscale  		# min color scale in mJy/beam or in micronJy/beam
+max_colorscale			# max color scale in mJy/beam
+min_colorscale  		# min color scale in mJy/beam
 spot_planet	No
 display_label	#
 display_time	No
