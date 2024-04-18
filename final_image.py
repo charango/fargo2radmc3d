@@ -199,6 +199,7 @@ def produce_final_image(input=''):
                 if not(par.max_colorscale == '#'):
                     if not(par.max_colorscale > 1.0):
                         convolved_intensity = smooth * 1e6 * beam   # microJy/beam
+                        par.max_colorscale *= 1e3
                         strflux = r'Flux of continuum emission [$\mu$Jy/beam]'
                         # Gas RT and a single velocity channel
                         if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.widthkms == 0.0:
@@ -451,7 +452,10 @@ def produce_final_image(input=''):
     # imshow does a bilinear interpolation. You can switch it off by putting
     # interpolation='none'
     CM = ax.imshow(convolved_intensity, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[a0,a1,d0,d1], norm=mynorm, aspect='auto')
-    
+    print('=========')
+    print(a0,a1,d0,d1)
+    print('=========')
+
     # Add wavelength/user-defined string in top-left/right corners
     if ( ('display_label' in open('params.dat').read()) and (par.display_label != '#') ):
         strlambda = par.display_label
@@ -550,6 +554,8 @@ def produce_final_image(input=''):
     if check_beam == 'Yes':
         ax.contour(convolved_intensity,levels=[0.5*convolved_intensity.max()],color='black', linestyles='-',origin='lower',extent=[a0,a1,d0,d1])
     '''
+
+    print('min and max of moment 1 velocity = ',convolved_intensity.min(),convolved_intensity.max())
     
     # Add a few contours in order 1 moment maps for gas emission
     if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
