@@ -343,7 +343,7 @@ def produce_final_image(input=''):
             jybeamfileout=re.sub('.fits', substr, inbasename)
         else:
             jybeamfileout=re.sub('.fits', '_JyBeam.fits', inbasename)
-        fits.writeto(jybeamfileout,final_image,hdr1,clobber=True)
+        fits.writeto(jybeamfileout,final_image,hdr1,overwrite=True)
         convolved_intensity = final_image
 
         # remove unnecessary fits files
