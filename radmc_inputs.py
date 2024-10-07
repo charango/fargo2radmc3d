@@ -205,14 +205,6 @@ def write_lines(specie,lines_mode):
     # Get molecular data file
     molecular_file = 'molecule_'+str(par.gasspecies)+'.inp'
     if os.path.isfile(molecular_file) == False:
-
-        # ---
-        # check if curl is installed
-        from shutil import which
-        if which('curl') is None:
-            sys.exit('curl is not installed on your system! I cannot download the molecular data file. Please install curl and restart!')
-        # ---
-        
         if par.verbose == 'Yes':
             print('--------- Downloading molecular data file ----------')
         datafile = str(par.gasspecies)
@@ -222,7 +214,6 @@ def write_lines(specie,lines_mode):
             datafile = 'so@lique'
         if par.gasspecies == 'cs':
             datafile = 'cs'
-            
         command = 'curl -O https://home.strw.leidenuniv.nl/~moldata/datafiles/'+datafile+'.dat'
         print(command)
         os.system(command)

@@ -29,7 +29,7 @@ def exportfits():
         iformat = int(f.readline())
 
         # nb of pixels
-        im_nx, im_ny = tuple(np.array(f.readline().split(),dtype=int))  
+        im_nx, im_ny = tuple(np.array(f.readline().split(),dtype=int))
 
         # nb of wavelengths, can be different from unity for
         # multi-color images of gas emission
@@ -224,6 +224,10 @@ def exportfits():
         # unrealistically large. We put it to zero at the origin, as
         # it should be in our disc model! (3pix x 3pix around)
         im[im_ny//2-1:im_ny//2+1,im_nx//2-1:im_nx//2+1] = 0.0
+        if (('TestAddStar' in open('params.dat').read()) and (par.TestAddStar == 'Yes')):  # for test purpose: add the star light
+            flux_rate = 1e-1
+            star_pixel = np.sum(im)/(4*flux_rate)
+            im[im_ny//2-1:im_ny//2,im_nx//2-1:im_nx//2] = star_pixel
 
     # - - - - - -
     # dust polarized RT calculations
@@ -236,6 +240,9 @@ def exportfits():
             # is unrealistically large. We put it to zero *around* the
             # origin, as it should be in our disc model!
             im[k,im_ny//2-1:im_ny//2+1,im_nx//2-1:im_nx//2+1] = 0.0
+            if (('TestAddStar' in open('params.dat').read()) and (par.TestAddStar == 'Yes')):  # for test purpose: add the star light
+                max_pixel = 5 * im.max()
+                im[k,im_ny//2-1:im_ny//2,im_nx//2-1:im_nx//2] = max_pixel
 
     # - - - - - -
     # line or dust+line RT calculations
@@ -301,8 +308,78 @@ def exportfits():
         if par.moment_order == 0:
             im = moment0   # non-convolved quantity
         if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
+
+            # -------------------------------------
+            # calculate the 'classic' moment-1 map:
+            # -------------------------------------
             im = moment1/moment0 # ratio of two beam-convolved quantities (convolution not redone afterwards)
-    
+
+            # -------------------------------------
+            # calculate the residual moment-1 map:
+            # -------------------------------------
+
+            # pixel size converted from degrees to arcseconds
+            cdelt = float(-1.*pixsize_x_deg)*3600.0
+            nx = im_nx
+            ny = im_ny
+
+            if ( (nx % 2) == 0):
+                dpix = 0.5
+            else:
+                dpix = 0.0
+            a0 = cdelt*(nx//2.-dpix)   # >0
+            a1 = -cdelt*(nx//2.+dpix)  # <0
+            d0 = -cdelt*(nx//2.-dpix)  # <0
+            d1 = cdelt*(nx//2.+dpix)   # >0
+            # da positive definite
+            if (par.minmaxaxis < abs(a0)):
+                da = par.minmaxaxis
+            else:
+                da = np.maximum(abs(a0),abs(a1))
+
+            # create a new image
+            (Y,X) = (im_ny,im_nx)
+            moment1_minus_vK = np.zeros((Y,X))
+
+            # go through moment1_minus_vK[][] to subtract the keplerian velocity at each pixel from im[][]
+            for y in range(Y):
+                for x in range(X):
+
+                    # calculate the distance r in [cm] of (x,y) from the star in the disc frame
+                    alpha = (par.posangle+90.0)*math.pi/180
+
+                    # (xd,yd) coordinates in the disc plane (rotation of alpha + rotation of par.inclination around the xd axis)
+                    # ((x,y) being the coordinates in the sky plane)
+                    xd = math.cos(alpha)*float(x) + math.sin(alpha)*float(y)
+                    yd = (-math.sin(alpha)*float(x) + math.cos(alpha)*float(y))/math.cos(par.inclination*math.pi/180.0)
+
+                    Xd = math.cos(alpha)*X + math.sin(alpha)*Y
+                    Yd = (-math.sin(alpha)*X + math.cos(alpha)*Y)/math.cos(par.inclination*math.pi/180.0)
+
+                    d = ((xd - Xd//2)**2 + ((yd - Yd//2))**2)**0.5
+                    r = np.maximum(abs(a0),abs(a1)) * par.distance * par.au * d / (X*0.5)       # cm
+
+                    # finally calculate the distance r_cu in the code units
+                    r_cu = r/(par.gas.culength*100.0)
+                    
+                    # azimuthal coordinate in the disk plan
+                    phi = math.atan2(((yd-Yd//2)),(xd-Xd//2+1e-20))
+
+                    # for testing purpose: defining the Keplerian velocity above or below the midplane
+                    # if (('TestVelocityNotMidplane' in open('params.dat').read()) and (par.TestVelocityNotMidplane == 'Yes')):
+                    testtt = 'No'
+                    if testtt == 'Yes':
+                        hh = par.aspectratio * (r_cu)**(par.flaringindex) * r
+                        eta = 3.0
+                        fact = np.sqrt(r/np.sqrt(r**2 + (eta*hh)**2) - 3*((eta*hh)/r)**2)
+                    else:
+                        fact = 1.0
+
+                    # substract the keplerian velocity at each [y,x]
+                    if r_cu > par.gas.redge.min() and r_cu < par.gas.redge.max():
+                        vK_obs = 1e-5 * math.sin(par.inclination*math.pi/180.0) * math.cos(phi) * (1e3*par.gas.cumass*par.G/r)**0.5 * fact       # compute v_K_app(x,y)
+                        moment1_minus_vK[y,x] = im[y,x] - vK_obs
+
 
     # ----------
     # Finally write (modified) images in fits file
@@ -354,6 +431,25 @@ def exportfits():
 
     hdu.data = im.astype('float32')
     hdu.writeto(par.outputfitsfile, output_verify='fix', overwrite=True)
+
+
+    # write fits file for the residual moment-1 map:
+    if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
+
+        hdu_2 = hdu
+        hdu_2.data = moment1_minus_vK.astype('float32')
+
+        # filename
+        inbasename = os.path.basename('./'+par.outputfitsfile)
+        # add beam information
+        if par.log_colorscale == 'Yes':
+            jybeamfileoutminusvK = re.sub('.fits', '_logYes' + '_bmaj'+str(par.bmaj) + '_bmin'+str(par.bmin) + '.fits', inbasename)
+        else:
+            jybeamfileoutminusvK = re.sub('.fits', '_bmaj'+str(par.bmaj) + '_bmin'+str(par.bmin) + '.fits', inbasename)
+
+        jybeamfileoutminusvK=re.sub('.fits', '_JyBeam_residual.fits', jybeamfileoutminusvK)
+        hdu_2.writeto(jybeamfileoutminusvK, output_verify='fix', overwrite=True)
+
 
     if par.plot_tau == 'No' and par.verbose == 'Yes':
         print("Total flux [Jy] = "+str(np.sum(hdu.data)))

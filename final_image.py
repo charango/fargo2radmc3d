@@ -199,7 +199,7 @@ def produce_final_image(input=''):
                 if not(par.max_colorscale == '#'):
                     if not(par.max_colorscale > 1.0):
                         convolved_intensity = smooth * 1e6 * beam   # microJy/beam
-                        par.max_colorscale *= 1e3
+                        par.max_colorscale *= 1e3       # since max_colorscale originally in mJy/beam
                         strflux = r'Flux of continuum emission [$\mu$Jy/beam]'
                         # Gas RT and a single velocity channel
                         if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.widthkms == 0.0:
@@ -355,7 +355,7 @@ def produce_final_image(input=''):
     # plotting image panel
     # --------------------
     matplotlib.rcParams.update({'font.size': 20})
-    matplotlib.rc('font', family='Arial') 
+    #matplotlib.rc('font', family='Arial') 
     '''
     plt.rcParams['font.family'] = 'DeJavu Serif'
     plt.rcParams['font.serif'] = ['Helvetica']
@@ -420,7 +420,6 @@ def produce_final_image(input=''):
     #ax.set_xticks(ax.get_yticks())    # set same ticks in x and y in cartesian
     #ax.set_yticks(ax.get_xticks())    # set same ticks in x and y in cartesian 
     
-
     # Normalization: linear or logarithmic scale
     if par.min_colorscale == '#':
         min = convolved_intensity.min()
@@ -452,10 +451,7 @@ def produce_final_image(input=''):
     # imshow does a bilinear interpolation. You can switch it off by putting
     # interpolation='none'
     CM = ax.imshow(convolved_intensity, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[a0,a1,d0,d1], norm=mynorm, aspect='auto')
-    print('=========')
-    print(a0,a1,d0,d1)
-    print('=========')
-
+    
     # Add wavelength/user-defined string in top-left/right corners
     if ( ('display_label' in open('params.dat').read()) and (par.display_label != '#') ):
         strlambda = par.display_label
@@ -554,8 +550,6 @@ def produce_final_image(input=''):
     if check_beam == 'Yes':
         ax.contour(convolved_intensity,levels=[0.5*convolved_intensity.max()],color='black', linestyles='-',origin='lower',extent=[a0,a1,d0,d1])
     '''
-
-    print('min and max of moment 1 velocity = ',convolved_intensity.min(),convolved_intensity.max())
     
     # Add a few contours in order 1 moment maps for gas emission
     if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
@@ -601,7 +595,7 @@ def produce_final_image(input=''):
     plt.clf()
 
     # =====================
-    # Compute deprojection and polar expansion (SP)
+    # Compute deprojection and polar expansion (SP, VO)
     # =====================
     if par.deproj_polar == 'Yes':
         
@@ -637,7 +631,145 @@ def produce_final_image(input=''):
         filein = re.sub('.pdf', '_polar.fits', fileout)
         # Read fits file with deprojected field in polar coordinates
         f = fits.open(filein)
-        convolved_intensity = f[0].data    # uJy/beam
+        convolved_intensity = f[0].data    # uJy/beam CB : ??
+
+        # ----------------
+        # EXOALMA-like deprojection maps (VO)
+        # ----------------
+        if (('Deproj' in open('params.dat').read()) and (par.Deproj == 'Yes')) and (par.moment_order == 0 or par.RTdust_or_gas == 'dust') :
+
+            import math
+
+            # create a polar image from the previous deprojected image
+            fig = plt.figure(figsize=(12.2,12.2))
+            ax = fig.add_subplot(111, projection='polar')
+
+            # create a polar grid
+            nbpixels_deproj = math.floor(par.nbpixels/4.0)
+            theta = np.linspace(0, 2*np.pi, nbpixels_deproj)
+            # da positive definite
+            if (par.minmaxaxis < abs(a0)):
+                da = par.minmaxaxis   # in arcsecond
+            else:
+                da = np.maximum(abs(a0),abs(a1))
+            print('HERE da = ',da)
+            print('HERE size max [au] = ',da*par.distance)
+            r = np.linspace(0,da*par.distance,nbpixels_deproj)
+            theta, r = np.meshgrid(theta,r)
+
+            # Allocate array
+            deprojected_moment0 = np.zeros((nbpixels_deproj,nbpixels_deproj))
+
+            beta = (par.posangle)*math.pi/180               # position angle
+
+            print('--------- Plotting deprojected map ----------')
+            import sys
+
+            for i in range(nbpixels_deproj):
+
+                # just to see how it processes
+                if math.floor(100*i/nbpixels_deproj)%1 == 0:
+                    sys.stdout.write("\rProcessing: " + str(math.floor(100*i/(nbpixels_deproj))) +  "% done")
+                    sys.stdout.flush()
+                
+                # fill deprojected_moment0[][] with the right values
+                for j in range(nbpixels_deproj):
+                    xx = math.floor((np.mod(theta[i,j] - np.pi,2*np.pi)*par.nbpixels/(2*np.pi)))
+                    yy = math.floor(r[i,j]*par.nbpixels/(par.gas.redge.max()*(1e2*par.gas.culength/par.au)))
+                    if 0 <= xx and xx < par.nbpixels and 0 <= yy and yy < par.nbpixels:         # check if the index isn't too big/low
+                        deprojected_moment0_i_j = convolved_intensity[yy,xx]
+                        if (par.RTdust_or_gas == 'gas'):
+                            # truncate values if they aren't in [par.min_colorscale, par.max_colorscale]
+                            if ('max_colorscale' in open('params.dat').read()) and par.max_colorscale != '#' and deprojected_moment0_i_j > par.max_colorscale:
+                                deprojected_moment0[i,j] = par.max_colorscale
+                            elif ('min_colorscale' in open('params.dat').read()) and par.min_colorscale != '#' and deprojected_moment0_i_j < par.min_colorscale:
+                                deprojected_moment0[i,j] = par.min_colorscale
+                            else:
+                                deprojected_moment0[i,j] = deprojected_moment0_i_j
+                        if (par.RTdust_or_gas == 'dust'):
+                            # truncate values if they aren't in [par.min_colorscale, par.max_colorscale]
+                            if ('max_colorscale' in open('params.dat').read()) and par.max_colorscale != '#' and deprojected_moment0_i_j > 1e3*par.max_colorscale:
+                                deprojected_moment0[i,j] = 1e3*par.max_colorscale
+                            elif ('min_colorscale' in open('params.dat').read()) and par.min_colorscale != '#' and deprojected_moment0_i_j < 1e3*par.min_colorscale:
+                                deprojected_moment0[i,j] = 1e3*par.min_colorscale
+                            else:
+                                deprojected_moment0[i,j] = deprojected_moment0_i_j
+            
+            print("\r")
+
+
+            # Option: spot planet position
+            if (('spot_planet' in open('params.dat').read()) and (par.spot_planet == 'Yes')):
+                import math
+                xp_proj = xp_sky
+                yp_proj = yp_sky / np.abs(np.cos(inclination_in_rad)) # cuidadin
+                print('xp_proj = ', xp_proj)
+                print('yp_proj = ', yp_proj)
+                rp_proj = np.sqrt(xp_proj*xp_proj + yp_proj*yp_proj)
+
+                if isinstance(xp_proj, float) == True:
+                    xp_proj = [xp_proj]
+                    yp_proj = [yp_proj]
+                
+                # in degrees, measured earth of north
+                dim = len(xp_proj)
+                tp_proj = np.zeros(dim)
+                for i in range(dim):
+                    tp_proj[i] = (np.pi/2.0 + math.atan2(-yp_proj[i],xp_proj[i]) + (par.posangle - np.pi))*180./np.pi
+                    if tp_proj[i] < 0.0:
+                        tp_proj[i] += 360.0
+                    if tp_proj[i] > 360.0:
+                        tp_proj[i] -= 360.0
+                print('planet position on deprojected sky-plane: rp ["] = ', rp_proj, ' and tp_proj [deg] = ', tp_proj)
+                print('planet position on deprojected sky-plane: rp ["] = ', rp_proj*par.distance, ' and tp_proj [deg] = ', tp_proj)
+                
+                for i in range(dim):
+                    ax.plot(np.deg2rad(tp_proj), rp_proj*par.distance, 'o', color='pink', markersize=10, markeredgewidth=2, markeredgecolor='red')
+                    
+
+            # plotting the deprojected moment-0 map
+
+            levels = np.arange(deprojected_moment0.min(), deprojected_moment0.max()+deprojected_moment0.max()/100.0, abs(deprojected_moment0.max() - deprojected_moment0.min())/50.0)
+            print('deprojected_moment0 min() = ', deprojected_moment0.min())
+            print('deprojected_moment0.max() = ', deprojected_moment0.max())
+            print('convolved_intensity.max() = ', convolved_intensity.max())
+
+            if (par.RTdust_or_gas == 'gas'):
+                contour = ax.contourf(theta,r, deprojected_moment0, levels=levels, cmap=par.mycolormap)
+            if (par.RTdust_or_gas == 'dust'):
+                print("!! you need to have proplot installed (can do it with: pip install proplot) !!")
+                import proplot as pplt
+                #contour = ax.pcolormesh(X,Y,array,cmap=mycolormap,norm=mynorm,rasterized=True)
+                contour = ax.contourf(theta,r, deprojected_moment0, levels=levels, cmap='Stellar')
+            cbar = plt.colorbar(contour, orientation='horizontal', pad=0.1, shrink=0.7, aspect=43, anchor=(0.5, 0.5))
+            plt.subplots_adjust(top=0.75, bottom=0.1)
+            cbar.ax.set_position([0.1, 0.78, 0.8, 0.0115])
+            if (par.RTdust_or_gas == 'gas'):
+                cbar.ax.text(0.5, 4.5, strgas+' integrated intensity [mJy/beam km/s]', horizontalalignment='center', fontsize=20, transform=cbar.ax.transAxes)
+
+            if (par.RTdust_or_gas == 'dust'):
+                cbar.ax.text(0.5, 4.5, 'Flux of continuum emission [mJy/beam]', horizontalalignment='center', fontsize=20, transform=cbar.ax.transAxes)
+
+            from matplotlib.ticker import MaxNLocator
+            locator = MaxNLocator(nbins=5)
+            cbar.locator = locator
+            cbar.update_ticks()
+            cbar.ax.tick_params(labelsize=20)
+            cbar.ax.invert_yaxis()
+            cbar.ax.xaxis.tick_top()
+
+            ax.set_xticks(np.radians(np.arange(0, 360, 30)))
+            ax.set_yticks(np.arange(0, da*par.distance, 50))
+            ax.tick_params(axis='x', labelsize=14)
+            ax.tick_params(axis='y', labelsize=12, labeltop=True, labelbottom=False)
+
+
+            # finally save the image
+            if (par.RTdust_or_gas == 'gas'):
+                plt.savefig('deproj_moment0_gas.pdf', dpi=160, bbox_inches='tight')
+            if (par.RTdust_or_gas == 'dust'):
+                plt.savefig('deproj_moment0_dust.pdf', dpi=160, bbox_inches='tight')
+
 
         if par.log_colorscale == 'Yes':
             convolved_intensity[convolved_intensity <= min] = min # min defined above
@@ -649,7 +781,9 @@ def produce_final_image(input=''):
         else:
             jshift = int(par.nbpixels/4 + (90.0-par.posangle)*par.nbpixels/360.0)  # ?? check!
         convolved_intensity = np.roll(convolved_intensity, shift=-jshift, axis=1)
-    
+
+        # CB: test!
+        matplotlib.rcParams.update({'font.size': 20})
         
         # -------------------------------
         # plot image in polar coordinates
@@ -667,11 +801,11 @@ def produce_final_image(input=''):
             ymax = np.maximum(abs(a0),abs(a1))
         ax.set_ylim(0,ymax)      # Deprojected radius in arcsec
 
-        if ( (nx % 2) == 0):
-            dpix = 0.5
-        else:
-            dpix = 0.0
-        a0 = cdelt*(nx//2.-dpix)   # >0
+        # if ( (nx % 2) == 0):
+        #     dpix = 0.5
+        # else:
+        #     dpix = 0.0
+        # a0 = cdelt*(nx//2.-dpix)   # >0
 
         ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
         ax.set_xticks((-180,-120,-60,0,60,120,180))
@@ -773,5 +907,586 @@ def produce_final_image(input=''):
             plt.savefig('./'+'axi'+fileout, dpi=160)
             plt.clf()
 
+
+            # plot the 0-order momentum minus the mean intensity at each orbit
+
+            # substract the mean intensity at each pixel
+            for j in range(par.nbpixels):
+                for i in range(par.nbpixels):
+                    convolved_intensity[j][i] = convolved_intensity[j][i] - average_convolved_intensity[j]
+
+            fig = plt.figure(figsize=(8.,8.))
+            plt.subplots_adjust(left=0.15, right=0.96, top=0.88, bottom=0.09)
+            ax = plt.gca()
+
+            # Normalization: linear or logarithmic scale
+            if par.min_colorscale == '#':
+                min = convolved_intensity.min()
+                if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
+                    min = 0.0
+            else:
+                min = par.min_colorscale
+            if par.max_colorscale == '#':
+                max = convolved_intensity.max()
+                if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
+                    max = 1.0
+            else:
+                max = par.max_colorscale
+            if par.log_colorscale == 'Yes':
+                if par.min_colorscale == '#':
+                    min = 1e-2*max
+                else:
+                    min = par.min_colorscale
+                # avoid negative values of array
+                convolved_intensity[convolved_intensity <= min] = min
+
+            if par.log_colorscale == 'Yes':
+                mynorm = matplotlib.colors.LogNorm(vmin=min,vmax=max)
+            else:
+                mynorm = matplotlib.colors.Normalize(vmin=min,vmax=max)
+
+            print(min,convolved_intensity.min())
+            print(max,convolved_intensity.max())
+
+            # Set x- and y-ranges
+            ax.set_xlim(-180,180)          # PA relative to Clump 1's
+            if (par.minmaxaxis < np.maximum(abs(a0),abs(a1))):
+                ymax = par.minmaxaxis
+            else:
+                ymax = np.maximum(abs(a0),abs(a1))
+            ax.set_ylim(0,ymax)      # Deprojected radius in arcsec
+
+            ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+            ax.set_xticks((-180,-120,-60,0,60,120,180))
+            #ax.set_yticks((0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7))
+            ax.set_xlabel('Position Angle [deg]')
+            ax.set_ylabel(strylabel_polar)
+
+            
+            # imshow does a bilinear interpolation. You can switch it off by putting
+            # interpolation='none'. Note that mynorm has already been defined above
+            CM = ax.imshow(convolved_intensity, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[-180,180,0,np.maximum(abs(a0),abs(a1))], norm=mynorm, aspect='auto')   # (left, right, bottom, top)
+
+            # Add wavelength in top-left corner
+            ax.text(-160,0.95*ymax,strlambda,fontsize=20,color='white',weight='bold',horizontalalignment='left',verticalalignment='top')
+
+            # Option: add time in top-right corner
+            if ('display_time' in open('params.dat').read()) and (par.display_time == 'Yes'):
+                ax.text(160,0.95*ymax,strtime,fontsize=20,color='white',weight='bold',horizontalalignment='right',verticalalignment='top')
+
+            # Option: spot planet position
+            if (('spot_planet' in open('params.dat').read()) and (par.spot_planet == 'Yes')):
+                import math
+                xp_proj = xp_sky
+                yp_proj = yp_sky / np.abs(np.cos(inclination_in_rad)) # cuidadin
+                print('xp_proj = ', xp_proj)
+                print('yp_proj = ', yp_proj)
+                rp_proj = np.sqrt(xp_proj*xp_proj + yp_proj*yp_proj)
+
+                if isinstance(xp_proj, float) == True:
+                    xp_proj = [xp_proj]
+                    yp_proj = [yp_proj]
+                
+                # in degrees, measured earth of north
+                dim = len(xp_proj)
+                tp_proj = np.zeros(dim)
+                for i in range(dim):
+                    tp_proj[i] = (np.pi/2.0 + math.atan2(-yp_proj[i],xp_proj[i]))*180./np.pi
+                    if tp_proj[i] < -180.0:
+                        tp_proj[i] += 360.0
+                    if tp_proj[i] > 180.0:
+                        tp_proj[i] -= 360.0
+                print('planet position on deprojected sky-plane: rp ["] = ', rp_proj, ' and tp_proj [deg] = ', tp_proj)
+                ax.plot(tp_proj,rp_proj,'x',color='white',markersize=10)
+
+            # plot color-bar
+            from mpl_toolkits.axes_grid1 import make_axes_locatable
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("top", size="2.5%", pad=0.12)
+            cb =  plt.colorbar(CM, cax=cax, orientation='horizontal')
+            cax.xaxis.tick_top()
+            cax.xaxis.set_tick_params(labelsize=20, direction='out')
+            cax.xaxis.set_major_locator(plt.MaxNLocator(6))
+            if par.log_colorscale == 'Yes':
+                cax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=10))
+            # title on top
+            cax.xaxis.set_label_position('top')
+            cax.set_xlabel(strflux)
+            cax.xaxis.labelpad = 8
+
+            #plt.savefig('./'+fileout, dpi=160)
+            plt.savefig('./'+"moment_0_minus_mean_intensity.pdf", dpi=160)
+            plt.clf()
+
+
         os.system('rm -rf deproj_polar_dir')
         os.chdir(currentdir)
+
+
+        # plot the 1-order momentum minus the keplerian velocity
+
+        if par.moment_order == 1:
+
+            inbasename = os.path.basename('./'+par.outputfitsfile)
+
+            # add beam information
+            if par.log_colorscale == 'Yes':
+                jybeamfileoutminusvK = re.sub('.fits', '_logYes' + '_bmaj'+str(par.bmaj) + '_bmin'+str(par.bmin) + '.fits', inbasename)
+            else:
+                jybeamfileoutminusvK = re.sub('.fits', '_bmaj'+str(par.bmaj) + '_bmin'+str(par.bmin) + '.fits', inbasename)
+
+            jybeamfileoutminusvK=re.sub('.fits', '_JyBeam_residual.fits', jybeamfileoutminusvK)
+            fileout_moment1_residual = re.sub('.fits','_JyBeam_residual.pdf', jybeamfileoutminusvK)
+
+            f = fits.open(jybeamfileoutminusvK)
+            raw_intensity = f[0].data
+            smooth = raw_intensity
+            moment1_minus_vK = f[0].data
+
+            if (par.polarized_scat == 'No' and par.plot_tau == 'No'):
+                # Call to Gauss_filter function
+
+                if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
+                    smooth = raw_intensity
+
+                strflux = 'Flux of continuum emission [mJy/beam]'
+                if par.gasspecies == 'co':
+                    strgas = r'$^{12}$CO'
+                elif par.gasspecies == '13co':
+                    strgas = r'$^{13}$CO'
+                elif par.gasspecies == 'c17o':
+                    strgas = r'C$^{17}$O'
+                elif par.gasspecies == 'c18o':
+                    strgas = r'C$^{18}$O'
+                elif par.gasspecies == 'hco+':
+                    strgas = r'HCO+'
+                elif par.gasspecies == 'so':
+                    strgas = r'SO'
+                else:
+                    strgas = str(par.gasspecies).upper()  # capital letters
+                if par.gasspecies != 'so':
+                    strgas+=r' ($%d \rightarrow %d$)' % (par.iline,par.iline-1)
+                if par.gasspecies == 'so' and par.iline == 14:
+                    strgas+=r' ($5_6 \rightarrow 4_5$)'
+
+                #
+                if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
+                    moment1_minus_vK = smooth
+                    # this is actually 'raw_intensity' since for moment 1 maps
+                    # the intensity in each channel map is already convolved,
+                    # so that we do not convolve a second time!...
+                    strflux = strgas+' residual velocity [km/s]'
+
+
+            # -------------------------------------
+            # SP: save convolved flux map solution to fits 
+            # -------------------------------------
+            hdu = fits.PrimaryHDU()
+            hdu.header['BITPIX'] = -32    
+            hdu.header['NAXIS'] = 2  # 2
+            hdu.header['NAXIS1'] = par.nbpixels
+            hdu.header['NAXIS2'] = par.nbpixels
+            hdu.header['EPOCH']  = 2000.0
+            hdu.header['EQUINOX'] = 2000.0
+            hdu.header['LONPOLE'] = 180.0
+            hdu.header['CTYPE1'] = 'RA---SIN'
+            hdu.header['CTYPE2'] = 'DEC--SIN'
+            hdu.header['CRVAL1'] = float(0.0)
+            hdu.header['CRVAL2'] = float(0.0)
+            hdu.header['CDELT1'] = hdr['CDELT1']
+            hdu.header['CDELT2'] = hdr['CDELT2']
+            hdu.header['LBDAMIC'] = hdr['LBDAMIC']
+            hdu.header['CUNIT1'] = 'deg     '
+            hdu.header['CUNIT2'] = 'deg     '
+            hdu.header['CRPIX1'] = float((par.nbpixels+1.)/2.)
+            hdu.header['CRPIX2'] = float((par.nbpixels+1.)/2.)
+            if strflux == 'Flux of continuum emission [mJy/beam]':
+                hdu.header['BUNIT'] = 'milliJY/BEAM'
+            if strflux == r'Flux of continuum emission [$\mu$Jy/beam]':
+                hdu.header['BUNIT'] = 'microJY/BEAM'
+            if strflux == '':
+                hdu.header['BUNIT'] = ''
+            hdu.header['BTYPE'] = 'FLUX DENSITY'
+            hdu.header['BSCALE'] = 1
+            hdu.header['BZERO'] = 0
+            del hdu.header['EXTEND']
+            hdu.data = moment1_minus_vK
+            hdu.writeto(jybeamfileoutminusvK, overwrite=True)
+
+            # Normalization: linear or logarithmic scale
+            if par.min_colorscale == '#':
+                min = moment1_minus_vK.min()
+                if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
+                    min = 0.0
+            else:
+                min = par.min_colorscale
+            if par.max_colorscale == '#':
+                max = moment1_minus_vK.max()
+                if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
+                    max = 1.0
+            else:
+                max = par.max_colorscale
+            if par.log_colorscale == 'Yes':
+                if par.min_colorscale == '#':
+                    min = 1e-2*max
+                else:
+                    min = par.min_colorscale
+                # avoid negative values of array
+                moment1_minus_vK[moment1_minus_vK <= min] = min
+
+            if par.log_colorscale == 'Yes':
+                mynorm = matplotlib.colors.LogNorm(vmin=min,vmax=max)
+            else:
+                mynorm = matplotlib.colors.Normalize(vmin=min,vmax=max)
+
+            print(min,moment1_minus_vK.min())
+            print(max,moment1_minus_vK.max())
+
+            # create a deprojected image of the 1-order momentum
+
+            if (('Deproj' in open('params.dat').read()) and (par.Deproj == 'Yes')):
+                (Y,X) = moment1_minus_vK.shape
+                moment1_minus_vK_proj = np.zeros((Y,X))
+
+                currentdir = os.getcwd()
+                alpha_min = 0.;          # deg, PA of offset from the star
+                Delta_min = 0.;          # arcsec, amplitude of offset from the star
+                RA = 0.0  # if input image is a prediction, star should be at the center
+                DEC = 0.0 # note that this deprojection routine works in WCS coordinates
+
+                # CUIDADIN! testing purposes
+                cosi = np.cos(par.inclination_input*np.pi/180.)
+
+                if par.verbose == 'Yes':
+                    print('deprojection around PA [deg] = ',par.posangle)
+                    print('and inclination [deg] = ',par.inclination_input)
+                
+                # makes a new directory "deproj_polar_dir" and calculates a number
+                # of products: copy of the input image [_fullim], centered at
+                # (RA,DEC) [_centered], deprojection by cos(i) [_stretched], polar
+                # image [_polar], etc. Also, a _radial_profile which is the
+                # average radial intensity.
+                fileout_deproj = re.sub('.fits', '.pdf', jybeamfileoutminusvK)
+                exec_polar_expansions(jybeamfileoutminusvK,'deproj_polar_dir',par.posangle,cosi,RA=RA,DEC=DEC,
+                                    alpha_min=alpha_min, Delta_min=Delta_min,
+                                    XCheckInv=False,DoRadialProfile=False,
+                                    DoAzimuthalProfile=False,PlotRadialProfile=False,
+                                    zoomfactor=1.)
+                
+                # Save polar fits in current directory
+                fileout_deproj = re.sub('.pdf', '_polar.fits', fileout_deproj)
+
+                #command = 'cp deproj_polar_dir/'+fileout+' .'
+                command = 'cp deproj_polar_dir/'+fileout_deproj+' .'
+                os.system(command)
+
+                # filein_deproj = re.sub('.pdf', '_polar.fits', fileout_deproj)
+                filein_deproj = fileout_deproj
+                # Read fits file with deprojected field in polar coordinates
+                f = fits.open(filein_deproj)
+                deproj_moment1 = f[0].data
+
+
+                # create a polar image from the previous deprojected image
+
+                fig = plt.figure(figsize=(12.2,12.2))
+                ax = fig.add_subplot(111, projection='polar')
+
+                # create a polar grid
+                theta = np.linspace(0, 2*np.pi, math.floor(par.nbpixels/4.0))
+                r = np.linspace(0,par.minmaxaxis*par.distance,par.nbpixels)
+                theta, r = np.meshgrid(theta,r)
+
+                # Allocate array
+                deprojected_residual_moment1 = np.zeros((par.nbpixels,math.floor(par.nbpixels/4.0)))
+
+                beta = (par.posangle)*math.pi/180           # position angle
+
+                print('--------- Plotting deprojected map ----------')
+                import sys
+
+                for i in range(par.nbpixels):
+
+                    # just to see how it processes
+                    if math.floor(100*i/par.nbpixels)%1 == 0:
+                        sys.stdout.write("\rProcessing: " + str(math.floor(100*i/(par.nbpixels))) +  "% done")
+                        sys.stdout.flush()
+
+                    # fill deprojected_moment0[][] with the right values
+                    for j in range(math.floor(par.nbpixels/4.0)):
+                        xx = math.floor((np.mod(theta[i,j] - np.pi,2*np.pi)*par.nbpixels/(2*np.pi)))
+                        yy = math.floor(r[i,j]*par.nbpixels/(par.gas.redge.max()*(1e2*par.gas.culength/par.au)))
+                        if 0 <= xx and xx < par.nbpixels and 0 <= yy and yy < par.nbpixels:         # check if the index isn't too big/low
+                            deprojected_residual_moment1_i_j = deproj_moment1[yy,xx]
+                            # truncate values if they aren't in [par.min_colorscale, par.max_colorscale]
+                            if ('max_colorscale' in open('params.dat').read()) and par.max_colorscale != '#' and deprojected_residual_moment1_i_j > par.max_colorscale:
+                                deprojected_residual_moment1[i,j] = par.max_colorscale
+                            elif ('min_colorscale' in open('params.dat').read()) and par.min_colorscale != '#' and deprojected_residual_moment1_i_j < par.min_colorscale:
+                                deprojected_residual_moment1[i,j] = par.min_colorscale
+                            else:
+                                deprojected_residual_moment1[i,j] = deprojected_residual_moment1_i_j
+                
+                print("\r")
+
+
+                # Option: spot planet position
+                if (('spot_planet' in open('params.dat').read()) and (par.spot_planet == 'Yes')):
+                    import math
+                    xp_proj = xp_sky
+                    yp_proj = yp_sky / np.abs(np.cos(inclination_in_rad)) # cuidadin
+                    print('xp_proj = ', xp_proj)
+                    print('yp_proj = ', yp_proj)
+                    rp_proj = np.sqrt(xp_proj*xp_proj + yp_proj*yp_proj)
+
+                    if isinstance(xp_proj, float) == True:
+                        xp_proj = [xp_proj]
+                        yp_proj = [yp_proj]
+                    
+                    # in degrees, measured earth of north
+                    dim = len(xp_proj)
+                    tp_proj = np.zeros(dim)
+                    for i in range(dim):
+                        tp_proj[i] = (np.pi/2.0 + math.atan2(-yp_proj[i],xp_proj[i]) + (par.posangle - np.pi))*180./np.pi
+                        if tp_proj[i] < 0.0:
+                            tp_proj[i] += 360.0
+                        if tp_proj[i] > 360.0:
+                            tp_proj[i] -= 360.0
+                    print('planet position on deprojected sky-plane: rp ["] = ', rp_proj, ' and tp_proj [deg] = ', tp_proj)
+                    print('planet position on deprojected sky-plane: rp ["] = ', rp_proj*par.distance, ' and tp_proj [deg] = ', tp_proj)
+                    
+                    for i in range(dim):
+                        ax.plot(np.deg2rad(tp_proj), rp_proj*par.distance, 'o', color='pink', markersize=10, markeredgewidth=2, markeredgecolor='red')
+
+
+                # plotting the deprojected moment-1 map
+                
+                levels = np.arange(deprojected_residual_moment1.min(), deprojected_residual_moment1.max()+deprojected_residual_moment1.max()/100.0, abs(deprojected_residual_moment1.max() - deprojected_residual_moment1.min())/300.0)
+
+                if (par.RTdust_or_gas == 'gas'):
+                    #contour = ax.contourf(theta,r, deprojected_residual_moment1, levels=levels, cmap=par.mycolormap)
+                    contour = ax.contourf(theta,r, deprojected_residual_moment1, levels=levels, cmap='seismic') # ocean_r
+
+                cbar = plt.colorbar(contour, orientation='horizontal', pad=0.1, shrink=0.7, aspect=43, anchor=(0.5, 0.5))
+                plt.subplots_adjust(top=0.75, bottom=0.1)
+                cbar.ax.set_position([0.1, 0.78, 0.8, 0.0115])
+                cbar.ax.text(0.5, 4.5, strgas+' residual velocity [km/s]', horizontalalignment='center', fontsize=20, transform=cbar.ax.transAxes)
+                
+                from matplotlib.ticker import MaxNLocator
+                locator = MaxNLocator(nbins=5)
+                cbar.locator = locator
+                cbar.update_ticks()
+                cbar.ax.tick_params(labelsize=20, labeltop=True, labelbottom=False)
+                cbar.ax.invert_yaxis()
+                cbar.ax.xaxis.tick_top()
+
+
+                ax.set_xticks(np.radians(np.arange(0, 360, 30)))
+                ax.set_yticks(np.arange(0, par.minmaxaxis*par.distance, 50))
+                ax.tick_params(axis='x', labelsize=14)
+                ax.tick_params(axis='y', labelsize=12)
+
+                # add a dotted line symbolizing the position angle
+
+                be_like_exoalma = 'Yes'
+                if be_like_exoalma == 'Yes':
+                    posangle_rad = np.deg2rad(-par.posangle)
+                    posangle_rad_sym = np.deg2rad(-par.posangle+180.0)
+                else:
+                    posangle_rad = np.deg2rad(par.posangle)
+                    posangle_rad_sym = np.deg2rad(par.posangle+180.0)
+
+                line_length = 1.0*par.minmaxaxis*par.distance
+
+                line_theta = [0, posangle_rad]          # polar coordinate
+                line_r = [0, line_length]
+
+                line_theta_sym = [0, posangle_rad_sym]  # polar coordinate
+                line_r_sym = [0, line_length]
+
+                # plot the dotted line
+                ax.plot(line_theta, line_r, linestyle='--', color='black')
+                ax.plot(line_theta_sym, line_r_sym, linestyle='--', color='black')
+
+                # finally save the image
+                if (par.RTdust_or_gas == 'gas'):
+                    plt.savefig('deproj_moment1_gas.pdf', dpi=160, bbox_inches='tight')
+            
+            os.system('rm -rf deproj_polar_dir')
+            os.chdir(currentdir)
+
+            hdr0 = f[0].header
+            cdelt = np.abs(hdr0['CDELT1']*3600.)
+            nx = int(hdr0['NAXIS1'])
+            if ( (nx % 2) == 0):
+                dpix = 0.5
+            else:
+                dpix = 0.0
+            #dpix = 0.0
+            a0 = cdelt*(nx//2.-dpix)   # >0
+            a1 = -cdelt*(nx//2.+dpix)   # <0
+            d0 = -cdelt*(nx//2.-dpix)   # <0
+            d1 = cdelt*(nx//2.+dpix)    # >0
+            # da positive definite
+            if (par.minmaxaxis < abs(a0)):
+                da = par.minmaxaxis
+            else:
+                da = np.maximum(abs(a0),abs(a1))
+
+            fig = plt.figure(figsize=(8.,8.))
+            plt.subplots_adjust(left=0.15, right=0.96, top=0.88, bottom=0.09)
+            ax = plt.gca()
+
+            # Set x- and y-ranges
+            if (('Deproj' in open('params.dat').read()) and (par.Deproj == 'Yes')):
+                ax.set_xlim(par.minmaxaxis,-par.minmaxaxis)
+                ax.set_ylim(-par.minmaxaxis,par.minmaxaxis)
+            else:
+                ax.set_xlim(da,-da)
+                ax.set_ylim(-da,da)
+
+            ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+            ax.xaxis.set_major_locator(plt.MaxNLocator(7))
+            ax.yaxis.set_major_locator(plt.MaxNLocator(7))
+            if (('Deproj' in open('params.dat').read()) and (par.Deproj == 'Yes')):
+                ax.set_xlabel('Distance from center [arcsec]')
+                ax.set_ylabel('Distance from center [arcsec]')
+            else:
+                ax.set_xlabel('RA offset [arcsec]')
+                ax.set_ylabel('Dec offset [arcsec]')
+            
+        
+            # imshow does a bilinear interpolation. You can switch it off by putting
+            # interpolation='none'. Note that mynorm has already been defined above
+            if (('Deproj' in open('params.dat').read()) and (par.Deproj == 'Yes')):
+                CM = ax.imshow(moment1_minus_vK, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[par.minmaxaxis,-par.minmaxaxis,-par.minmaxaxis,par.minmaxaxis], norm=mynorm, aspect='auto')   # (left, right, bottom, top)
+            else:
+                CM = ax.imshow(moment1_minus_vK, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[a0,a1,d0,d1], norm=mynorm, aspect='auto')   # (left, right, bottom, top)
+
+            # Add wavelength in top-left corner
+            ax.text(-160,0.95*ymax,strlambda,fontsize=20,color='white',weight='bold',horizontalalignment='left',verticalalignment='top')
+
+            # Option: add time in top-right corner
+            if ('display_time' in open('params.dat').read()) and (par.display_time == 'Yes'):
+                ax.text(160,0.95*ymax,strtime,fontsize=20,color='white',weight='bold',horizontalalignment='right',verticalalignment='top')
+
+            # Option: spot planet position
+            if ( (('display_time' in open('params.dat').read()) and (par.display_time == 'Yes')) or (('spot_planet' in open('params.dat').read()) and (par.spot_planet == 'Yes')) ):
+                import itertools
+                with open(par.dir+"/orbit0.dat") as f_in:
+                    firstline_orbitfile = np.genfromtxt(itertools.islice(f_in, 0, 1, None), dtype=float)
+                apla = firstline_orbitfile[2]
+                fargo3d = 'No'
+                if os.path.isfile(par.dir+'/summary0.dat') == True:
+                    fargo3d = 'Yes'   
+                if fargo3d == 'Yes':
+                    f1, xpla, ypla, f4, f5, f6, f7, f8, date, omega = np.loadtxt(par.dir+"/planet0.dat",unpack=True)
+                else:
+                    f1, xpla, ypla, f4, f5, f6, f7, date, omega, f10, f11 = np.loadtxt(par.dir+"/planet0.dat",unpack=True)
+                
+                # check if planet0.dat file has only one line or more!
+                if isinstance(xpla, (list, tuple, np.ndarray)) == True:
+                    omegaframe = omega[par.on]
+                    time_in_code_units = round(date[par.on]/2./np.pi/apla/np.sqrt(apla),1)
+                else:
+                    omegaframe = omega
+                    time_in_code_units = round(date/2./np.pi/apla/np.sqrt(apla),1)
+                strtime = str(time_in_code_units)+' Porb'
+
+                # Add time in top-right corner
+                if (('display_time' in open('params.dat').read()) and (par.display_time == 'Yes')):
+                    ax.text(-xlambda,dmax-0.166*da,strtime, fontsize=20, color = 'white',weight='bold',horizontalalignment='right')
+
+                # Spot planet position in sky-plane
+                if (('spot_planet' in open('params.dat').read()) and (par.spot_planet == 'Yes')):
+                    xp = xpla[par.on] # in disc simulation plane
+                    yp = ypla[par.on] # in disc simulation plane
+
+                    # NEW (March 2024): case there is more than just one planet!
+                    if os.path.isfile(par.dir+"/planet1.dat") == True:
+                        print('Two planets to be displayed..')
+                        if fargo3d == 'Yes':
+                            f1, xpla, ypla, f4, f5, f6, f7, f8, date, omega = np.loadtxt(par.dir+"/planet1.dat",unpack=True)
+                        else:
+                            f1, xpla, ypla, f4, f5, f6, f7, date, omega, f10, f11 = np.loadtxt(par.dir+"/planet1.dat",unpack=True)
+                        xp = np.array([xp,xpla[par.on]])
+                        yp = np.array([yp,ypla[par.on]])
+                        print('xp = ', xp)
+                        print('yp = ', yp)
+                        
+                    if par.xaxisflip == 'Yes':
+                        xp = -xp
+                    else:
+                        xp = -xp  # cuidadin
+                        yp = -yp  # cuidadin
+                    print('planet position on simulation plane [code units]: xp = ', xp, ' and yp = ', yp)
+                    
+                    # convert from simulation units to arcsecond:
+                    if par.recalc_radmc == 'Yes':
+                        culength = par.gas.culength
+                    else:
+                        if par.override_units == 'No':
+                            if par.fargo3d == 'No':
+                                cumass, culength, cutime, cutemp = np.loadtxt(par.dir+"/units.dat",unpack=True)
+                            else:
+                                import sys
+                                import subprocess
+                                command = ' " /^UNITOFLENGTHAU/ " '+par.dir+'/variables.par'
+                                # check which version of python we're using
+                                if sys.version_info[0] < 3:   # python 2.X
+                                    buf = subprocess.check_output(command, shell=True)
+                                else:                         # python 3.X
+                                    buf = subprocess.getoutput(command)
+                                culength = float(buf.split()[1])*1.5e11  #from au to meters
+                        else:
+                            culength = par.new_unit_length # in meters
+                    code_unit_of_length = 1e2*culength # in cm
+                    
+                    xp *= code_unit_of_length/par.au/par.distance
+                    yp *= code_unit_of_length/par.au/par.distance
+                    print('planet position on simulation plane [arcseconds]: xp = ', xp, ' and yp = ', yp)
+                    phiangle_in_rad = par.phiangle*np.pi/180.0
+                    # add 90 degrees to be consistent with RADMC3D's convention for position angle
+                    posangle_in_rad = (par.posangle+90.0)*np.pi/180.0
+                    inclination_in_rad = par.inclination*np.pi/180.0
+                    xp_sky =  (xp*np.cos(phiangle_in_rad)+yp*np.sin(phiangle_in_rad))*np.cos(posangle_in_rad) + (-xp*np.sin(phiangle_in_rad)+yp*np.cos(phiangle_in_rad))*np.cos(inclination_in_rad)*np.sin(posangle_in_rad)
+                    yp_sky = -(xp*np.cos(phiangle_in_rad)+yp*np.sin(phiangle_in_rad))*np.sin(posangle_in_rad) + (-xp*np.sin(phiangle_in_rad)+yp*np.cos(phiangle_in_rad))*np.cos(inclination_in_rad)*np.cos(posangle_in_rad)
+                    print('planet position on sky-plane [arcseconds]: xp_sky = ', xp_sky, ' and yp_sky = ', yp_sky)
+                    ax.plot(xp_sky,yp_sky,'x',color='white',markersize=10)
+
+            # plot color-bar
+            from mpl_toolkits.axes_grid1 import make_axes_locatable
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("top", size="2.5%", pad=0.12)
+            cb =  plt.colorbar(CM, cax=cax, orientation='horizontal')
+            cax.xaxis.tick_top()
+            cax.xaxis.set_tick_params(labelsize=20, direction='out')
+            cax.xaxis.set_major_locator(plt.MaxNLocator(6))
+            if par.log_colorscale == 'Yes':
+                cax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=10))
+            
+            # plot beam
+            if par.plot_tau == 'No':
+                from matplotlib.patches import Ellipse
+                e = Ellipse(xy=[xlambda,dmin+0.166*da], width=par.bmin, height=par.bmaj, angle=par.bpaangle+90.0)
+                e.set_clip_box(ax.bbox)
+                e.set_facecolor('black')
+                e.set_alpha(0.8)
+                ax.add_artist(e)
+            # plot beam
+            '''
+            if par.check_beam == 'Yes':
+                from matplotlib.patches import Ellipse
+                e = Ellipse(xy=[0.0,0.0], width=par.bmin, height=par.bmaj, angle=par.bpaangle+90.0)
+                e.set_clip_box(ax.bbox)
+                e.set_facecolor('white')
+                e.set_alpha(1.0)
+                ax.add_artist(e)
+            '''
+
+            # title on top
+            cax.xaxis.set_label_position('top')
+            cax.set_xlabel(strflux)
+            cax.xaxis.labelpad = 8
+
+            plt.savefig('./'+fileout_moment1_residual, dpi=160)
+            plt.clf()
