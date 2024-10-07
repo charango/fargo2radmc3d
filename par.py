@@ -82,7 +82,7 @@ if verbose == 'Yes':
 # -------------------------        
 # Below we work out specific parameters and/or error messages
 # -------------------------
-        
+
 # was simulation carried out with Fargo3D?
 hydro2D = 'Yes'
 fargo3d = 'No'
@@ -101,7 +101,7 @@ else:
     else:
         print('neither gawk not awk are installed on your system! I cannot use them to extract relevant parameters from your .par parameter file in the simulation directory. Please install either awk or gawk.')
 
-        
+
 # Check if Fargo3D simulation was carried out in 2D or in 3D by
 # fetching NZ in the variables.par file:
 if fargo3d == 'Yes':
@@ -153,7 +153,7 @@ if recalc_radmc == 'Yes':
     
 if recalc_rawfits == 'Yes':
     recalc_fluxmap = 'Yes'
-
+    
 nb_photons = int(nb_photons)
 nb_photons_scat = int(nb_photons_scat)
     
@@ -315,7 +315,7 @@ if not('dustdens_eq_gasdens' in open('params.dat').read()):
 # radmc3d is not called get the aspect ratio and flaring index used in
 # the numerical simulation note that this works both for Dusty
 # FARGO-ADSG and FARGO3D simulations
-command = awk_command+' " BEGIN{IGNORECASE=1} /^AspectRatio/ " '+dir+'/*.par'
+command = awk_command+' " /^AspectRatio/ " '+dir+'/*.par'
 # check which version of python we're using
 if sys.version_info[0] < 3:   # python 2.X
     buf = subprocess.check_output(command, shell=True)
@@ -325,7 +325,7 @@ aspectratio = float(buf.split()[1])
 
 # get the flaring index used in the numerical simulation note that
 # this works both for Dusty FARGO-ADSG and FARGO3D simulations
-command = awk_command+' " BEGIN{IGNORECASE=1} /^FlaringIndex/ " '+dir+'/*.par'
+command = awk_command+' " /^FlaringIndex/ " '+dir+'/*.par'
 if sys.version_info[0] < 3:
     buf = subprocess.check_output(command, shell=True)
 else:

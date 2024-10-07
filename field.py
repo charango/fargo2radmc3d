@@ -33,7 +33,16 @@ class Field(Mesh):
         nsec = int(nsec)
         self.nrad = nrad
         self.nsec = nsec
-        self.ncol = par.ncol              # colatitude (ncol is a global variable)
+        if par.hydro2D == 'Yes':
+            self.ncol = par.ncol              # colatitude (ncol is a global variable)
+        else:
+            command = par.awk_command+' " /^NZ/ " ' + directory + 'variables.par'
+            # check which version of python we're using
+            if sys.version_info[0] < 3:   # python 2.X
+                buf = subprocess.check_output(command, shell=True)
+            else:                         # python 3.X
+                buf = subprocess.getoutput(command)
+            self.ncol = int(buf.split()[1])
 
         Mesh.__init__(self, directory)    # all Mesh attributes inside Field
 
@@ -64,6 +73,7 @@ class Field(Mesh):
                 self.cumass = float(buf.split()[1])*2e30  #from Msol to kg        
                 # unit of temperature = mean molecular weight * 8.0841643e-15 * M / L;
                 self.cutemp = 2.35 * 8.0841643e-15 * self.cumass / self.culength
+                self.cutime = np.sqrt( self.culength**3 / 6.673e-11 / self.cumass)
 
         # override units used in Fargo simulations:
         else:
@@ -89,10 +99,14 @@ class Field(Mesh):
         Reading the data
         """
         field = np.fromfile(f, dtype=dtype)
-        array = field.reshape(self.nrad,self.nsec) # 2D only!
-
-        # need to roll field by nsec/2 along azimuthal direction for FARGO3D runs!
-        if par.fargo3d == 'Yes':
-            array = np.roll(array, shift=int(self.nsec//2), axis=1)
+        if par.hydro2D == 'No': #3D simulation with fargo3d
+            array = field.reshape(self.ncol,self.nrad,self.nsec) # 3D
+            # need to roll field by nsec/2 along azimuthal direction for FARGO3D runs!
+            array = np.roll(array, shift=int(self.nsec//2), axis=2)
+        else:   # 2D simulation with dusty fargo adsg or fargo3d
+            array = field.reshape(self.nrad,self.nsec) # 2D
+            if par.fargo3d == 'Yes':
+                # need to roll field by nsec/2 along azimuthal direction for FARGO3D runs!
+                array = np.roll(array, shift=int(self.nsec//2), axis=1)
         
         return array

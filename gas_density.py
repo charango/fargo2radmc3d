@@ -15,23 +15,11 @@ from field import *
 # =========================
 def compute_gas_mass_volume_density():
 
-    # array allocation, right now this is assuming gas data is only 2D...
-    gascube = par.gas.data*(par.gas.cumass*1e3)/((par.gas.culength*1e2)**2.)  # nrad, nsec, quantity is in g / cm^2
+    if par.hydro2D == 'No':
+        gascube = par.gas.data*(par.gas.cumass*1e3)/((par.gas.culength*1e2)**3.)  # ncol, nrad, nsec, quantity is in g / cm^3
+    else:
+        gascube = par.gas.data*(par.gas.cumass*1e3)/((par.gas.culength*1e2)**2.)  # nrad, nsec, quantity is in g / cm^2
     
-    # Artificially make a cavity devoid of gas (test)
-    if ('cavity_gas' in open('params.dat').read()) and (par.cavity_gas == 'Yes'):
-        imin = np.argmin(np.abs(par.gas.rmed-1.0))
-        for i in range(par.gas.nrad):
-            if i < imin:
-                for j in range(par.gas.nsec):
-                    gascube[i,j] *= ((par.gas.rmed[i]/par.gas.rmed[imin])**(6.0))
-
-    # Make gas surface density axisymmetric (testing purposes)
-    if ('axisymgas' in open('params.dat').read()) and (par.axisymgas == 'Yes'):
-        axirhogas = np.sum(gascube,axis=1)/par.gas.nsec  # in code units
-        for i in range(par.gas.nrad):
-            gascube[i,:] = axirhogas[i]
-
     # Binary output files
     GASOUT = open('numberdens_%s.binp'%par.gasspecies,'wb')    # binary format
 
@@ -45,114 +33,196 @@ def compute_gas_mass_volume_density():
         hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol], dtype=int)
         hdr.tofile(GASOUTH2)
 
+    # --------------------------
+    # 3D simulation with fargo3d
+    # --------------------------
+    if par.hydro2D == 'No':  
+
+        # Allocate arrays
+        rhogascubeh2     = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))      # H2
+        rhogascube       = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))      # gas species (eg, CO...)
+
+        # Artificially make a cavity devoid of gas (test)
+        if ('cavity_gas' in open('params.dat').read()) and (par.cavity_gas == 'Yes'):
+            imin = np.argmin(np.abs(par.gas.rmed-1.0))
+            for i in range(par.gas.nrad):
+                if i < imin:
+                    # gascube[:,i,:] *= ((par.gas.rmed[i]/par.gas.rmed[imin])**(6.0))  # works?
+                    for j in range(par.gas.nsec):
+                        for k in range(par.gas.ncol):
+                            gascube[k,i,j] *= ((par.gas.rmed[i]/par.gas.rmed[imin])**(6.0))
+
+        # H2 number density
+        rhogascubeh2 = gascube         # quantity is in g/cm³
+        rhogascubeh2 /= (2.3*par.mp)   # quantity is now in cm^-3
+    
+        # species number density 
+        rhogascube = rhogascubeh2*par.abundance
+
+        # gas aspect ratio as function of r (or actually, R, cylindrical radius)
+        hgas = par.aspectratio * (par.gas.rmed)**(par.flaringindex)
+
+        # Simple model for photodissociation: drop
+        # number density by 5 orders of magnitude if 1/2
+        # erfc(z/sqrt(2)H) x Sigma_gas / mu m_p < 1e21 cm^-2
+        if par.photodissociation == 'Yes':
+            print('--------- apply photodissociation model (beware, may take some time...) ----------')
+            for k in range(par.gas.nsec):
+                for j in range(par.gas.ncol):
+                    for i in range(par.gas.nrad):
+                        # all relevant quantities below are in in cgs
+                        integral_z_to_inf = 0.0
+                        dz = (6*hgas[i]*par.gas.rmed[i]) * 1/par.gas.ncol
+                        for jj in range(j,par.gas.ncol):
+                            integral_z_to_inf += rhogascube[jj,i,k]*dz
+                        if (integral_z_to_inf < 1e21):
+                            rhogascube[j,i,k] *= 1e-5
         
-    # Allocate arrays
-    rhogascubeh2     = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))      # H2
-    rhogascubeh2_cyl = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))
-    rhogascube       = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))      # gas species (eg, CO...)
-    rhogascube_cyl   = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))
+        # Simple modelling of freezeout: drop CO number density whereever
+        # azimuthally-averaged gas temperature falls below 19K:
+        if par.freezeout == 'Yes' and par.Tdust_eq_Thydro == 'Yes':
+            print('--------- apply freezeout model ----------')
+            buf = np.fromfile('gas_tempcyl.binp', dtype='float64')
+            buf = buf[3:]
+            gas_temp = buf.reshape(par.gas.ncol,par.gas.nrad,par.gas.nsec) # ncol nrad nsec
+
+            axitemp = np.sum(gas_temp,axis=2)/par.gas.nsec  # nver nrad
+            for j in range(par.gas.ncol):
+                for i in range(par.gas.nrad):
+                    if axitemp[j,i] < 19.0:
+                        rhogascube[j,i,:] *= 1e-5
+
+            os.system('rm -f gas_tempcyl.binp')
+            del buf, gas_temp
 
     
-    # gas aspect ratio as function of r (or actually, R, cylindrical radius)
-    hgas = par.aspectratio * (par.gas.rmed)**(par.flaringindex)
-    hg2D = np.zeros((par.gas.nrad,par.gas.nsec))
-    r2D  = np.zeros((par.gas.nrad,par.gas.nsec))
-    for th in range(par.gas.nsec):
-        hg2D[:,th] = hgas     # nrad, nsec
-        r2D[:,th] = par.gas.rmed  # nrad, nsec
+    # --------------------------
+    # 2D simulation with dusty fargo adsg or fargo3d
+    # --------------------------
+    else:   
+
+        # Artificially make a cavity devoid of gas (test)
+        if ('cavity_gas' in open('params.dat').read()) and (par.cavity_gas == 'Yes'):
+            imin = np.argmin(np.abs(par.gas.rmed-1.0))
+            for i in range(par.gas.nrad):
+                if i < imin:
+                    for j in range(par.gas.nsec):
+                        gascube[i,j] *= ((par.gas.rmed[i]/par.gas.rmed[imin])**(6.0))
+
+        # Make gas surface density axisymmetric (testing purposes)
+        if ('axisymgas' in open('params.dat').read()) and (par.axisymgas == 'Yes'):
+            axirhogas = np.sum(gascube,axis=1)/par.gas.nsec  # in code units
+            for i in range(par.gas.nrad):
+                gascube[i,:] = axirhogas[i]
+
+
+        # Allocate arrays
+        rhogascubeh2     = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))      # H2
+        rhogascubeh2_cyl = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))
+        rhogascube       = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))      # gas species (eg, CO...)
+        rhogascube_cyl   = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))
 
         
-    # work out vertical expansion. First, for the array in cylindrical coordinates
-    for j in range(par.gas.nver):
-        rhogascubeh2_cyl[j,:,:] = gascube * np.exp( -0.5*(par.gas.zmed[j]/hg2D/r2D)**2.0 )  # nver, nrad, nsec
-        rhogascubeh2_cyl[j,:,:] /= ( np.sqrt(2.*np.pi) * r2D * hg2D  * par.gas.culength*1e2 * 2.3*par.mp )   # quantity is now in cm^-3
+        # gas aspect ratio as function of r (or actually, R, cylindrical radius)
+        hgas = par.aspectratio * (par.gas.rmed)**(par.flaringindex)
+        hg2D = np.zeros((par.gas.nrad,par.gas.nsec))
+        r2D  = np.zeros((par.gas.nrad,par.gas.nsec))
+        for th in range(par.gas.nsec):
+            hg2D[:,th] = hgas     # nrad, nsec
+            r2D[:,th] = par.gas.rmed  # nrad, nsec
 
-    # multiply by constant abundance ratio
-    rhogascube_cyl = rhogascubeh2_cyl*par.abundance
+            
+        # work out vertical expansion. First, for the array in cylindrical coordinates
+        for j in range(par.gas.nver):
+            rhogascubeh2_cyl[j,:,:] = gascube * np.exp( -0.5*(par.gas.zmed[j]/hg2D/r2D)**2.0 )  # nver, nrad, nsec
+            rhogascubeh2_cyl[j,:,:] /= ( np.sqrt(2.*np.pi) * r2D * hg2D  * par.gas.culength*1e2 * 2.3*par.mp )   # quantity is now in cm^-3
 
-    
-    # Simple model for photodissociation: drop
-    # number density by 5 orders of magnitude if 1/2
-    # erfc(z/sqrt(2)H) x Sigma_gas / mu m_p < 1e21 cm^-2
-    if par.photodissociation == 'Yes':
-        print('--------- apply photodissociation model (beware, may take some time...) ----------')
-        for k in range(par.gas.nsec):
+        # multiply by constant abundance ratio
+        rhogascube_cyl = rhogascubeh2_cyl*par.abundance
+
+        
+        # Simple model for photodissociation: drop
+        # number density by 5 orders of magnitude if 1/2
+        # erfc(z/sqrt(2)H) x Sigma_gas / mu m_p < 1e21 cm^-2
+        if par.photodissociation == 'Yes':
+            print('--------- apply photodissociation model (beware, may take some time...) ----------')
+            for k in range(par.gas.nsec):
+                for j in range(par.gas.nver):
+                    for i in range(par.gas.nrad):
+                        # all relevant quantities below are in in cgs
+                        chip = 0.5 *  math.erfc(par.gas.zmed[j]/np.sqrt(2.0)/hgas[i]/par.gas.rmed[i]) * gascube[i,k] / (2.3*par.mp)
+                        chim = 0.5 * math.erfc(-par.gas.zmed[j]/np.sqrt(2.0)/hgas[i]/par.gas.rmed[i]) * gascube[i,k] / (2.3*par.mp)
+                        if (chip < 1e21 or chim < 1e21):
+                            rhogascube_cyl[j,i,k] *= 1e-5
+
+            
+        # Simple modelling of freezeout: drop CO number density whereever
+        # azimuthally-averaged gas temperature falls below 19K:
+        if par.freezeout == 'Yes' and par.Tdust_eq_Thydro == 'Yes':
+            print('--------- apply freezeout model ----------')
+            buf = np.fromfile('gas_tempcyl.binp', dtype='float64')
+            buf = buf[3:]
+            gas_temp_cyl = buf.reshape(par.gas.nver,par.gas.nrad,par.gas.nsec) # nver nrad nsec
+
+            axitemp = np.sum(gas_temp_cyl,axis=2)/par.gas.nsec  # nver nrad
             for j in range(par.gas.nver):
                 for i in range(par.gas.nrad):
-                    # all relevant quantities below are in in cgs
-                    chip = 0.5 *  math.erfc(par.gas.zmed[j]/np.sqrt(2.0)/hgas[i]/par.gas.rmed[i]) * gascube[i,k] / (2.3*par.mp)
-                    chim = 0.5 * math.erfc(-par.gas.zmed[j]/np.sqrt(2.0)/hgas[i]/par.gas.rmed[i]) * gascube[i,k] / (2.3*par.mp)
-                    if (chip < 1e21 or chim < 1e21):
-                        rhogascube_cyl[j,i,k] *= 1e-5
+                    if axitemp[j,i] < 19.0:
+                        rhogascube_cyl[j,i,:] *= 1e-5
 
-        
-    # Simple modelling of freezeout: drop CO number density whereever
-    # azimuthally-averaged gas temperature falls below 19K:
-    if par.freezeout == 'Yes' and par.Tdust_eq_Thydro == 'Yes':
-        print('--------- apply freezeout model ----------')
-        buf = np.fromfile('gas_tempcyl.binp', dtype='float64')
-        buf = buf[3:]
-        gas_temp_cyl = buf.reshape(par.gas.nver,par.gas.nrad,par.gas.nsec) # nver nrad nsec
+            os.system('rm -f gas_tempcyl.binp')
+            del buf, gas_temp_cyl
 
-        axitemp = np.sum(gas_temp_cyl,axis=2)/par.gas.nsec  # nver nrad
-        for j in range(par.gas.nver):
+            
+        # then, sweep through the spherical grid
+        for j in range(par.gas.ncol):
             for i in range(par.gas.nrad):
-                if axitemp[j,i] < 19.0:
-                    rhogascube_cyl[j,i,:] *= 1e-5
-
-        os.system('rm -f gas_tempcyl.binp')
-        del buf, gas_temp_cyl
-
-        
-    # then, sweep through the spherical grid
-    for j in range(par.gas.ncol):
-        for i in range(par.gas.nrad):
-            
-            R = par.gas.rmed[i]*np.sin(par.gas.tmed[j])  # cylindrical radius
-            icyl = np.argmin(np.abs(par.gas.rmed-R))
-            if R < par.gas.rmed[icyl] and icyl > 0:
-                icyl-=1
-            
-            z = par.gas.rmed[i]*np.cos(par.gas.tmed[j])  # vertical altitude            
-            jcyl = np.argmin(np.abs(par.gas.zmed-z))
-            if z < par.gas.zmed[jcyl] and jcyl > 0:
-                jcyl-=1
-
-            # bilinear interpolation
-            if (icyl < par.gas.nrad-1 and jcyl < par.gas.nver-1 and icyl > 0):
-                dr = par.gas.rmed[icyl+1]-par.gas.rmed[icyl]
-                dz = par.gas.zmed[jcyl+1]-par.gas.zmed[jcyl]
                 
-                xij     = (par.gas.rmed[icyl+1]-R) * (par.gas.zmed[jcyl+1]-z) / (dr*dz)
-                if xij < 0 or xij > 1:
-                    print('beware that xij < 0 or xij > 1:',i,j,xij,par.gas.rmed[icyl+1]-R,dr,par.gas.zmed[jcyl+1]-z,dz)
+                R = par.gas.rmed[i]*np.sin(par.gas.tmed[j])  # cylindrical radius
+                icyl = np.argmin(np.abs(par.gas.rmed-R))
+                if R < par.gas.rmed[icyl] and icyl > 0:
+                    icyl-=1
                 
-                xijp1   = (par.gas.rmed[icyl+1]-R) * (z-par.gas.zmed[jcyl])   / (dr*dz)
-                if xijp1 < 0 or xijp1 > 1:
-                    print('beware that xijp1 < 0 or xijp1 > 1:',i,j,xijp1,par.gas.rmed[icyl+1]-R,dr,z-par.gas.zmed[jcyl],dz)
+                z = par.gas.rmed[i]*np.cos(par.gas.tmed[j])  # vertical altitude            
+                jcyl = np.argmin(np.abs(par.gas.zmed-z))
+                if z < par.gas.zmed[jcyl] and jcyl > 0:
+                    jcyl-=1
 
-                xip1j   = (R-par.gas.rmed[icyl])   * (par.gas.zmed[jcyl+1]-z) / (dr*dz)
-                if xip1j < 0 or xip1j > 1:
-                    print('beware that xip1j < 0 or xip1j > 1:',i,j,xip1j,R-par.gas.rmed[icyl],dr,par.gas.zmed[jcyl+1]-z,dz)
+                # bilinear interpolation
+                if (icyl < par.gas.nrad-1 and jcyl < par.gas.nver-1 and icyl > 0):
+                    dr = par.gas.rmed[icyl+1]-par.gas.rmed[icyl]
+                    dz = par.gas.zmed[jcyl+1]-par.gas.zmed[jcyl]
+                    
+                    xij     = (par.gas.rmed[icyl+1]-R) * (par.gas.zmed[jcyl+1]-z) / (dr*dz)
+                    if xij < 0 or xij > 1:
+                        print('beware that xij < 0 or xij > 1:',i,j,xij,par.gas.rmed[icyl+1]-R,dr,par.gas.zmed[jcyl+1]-z,dz)
+                    
+                    xijp1   = (par.gas.rmed[icyl+1]-R) * (z-par.gas.zmed[jcyl])   / (dr*dz)
+                    if xijp1 < 0 or xijp1 > 1:
+                        print('beware that xijp1 < 0 or xijp1 > 1:',i,j,xijp1,par.gas.rmed[icyl+1]-R,dr,z-par.gas.zmed[jcyl],dz)
 
-                xip1jp1 = (R-par.gas.rmed[icyl])   * (z-par.gas.zmed[jcyl])   / (dr*dz)
-                if xip1jp1 < 0 or xip1jp1 > 1:
-                    print('beware that xip1jp1 < 0 or xip1jp1 > 1:',i,j,xip1jp1,R-par.gas.rmed[icyl],dr,z-par.gas.zmed[jcyl],dz)
- 
-                rhogascube[j,i,:] = rhogascube_cyl[jcyl,icyl,:]*xij +\
-                  rhogascube_cyl[jcyl+1,icyl,:]*xijp1 +\
-                  rhogascube_cyl[jcyl,icyl+1,:]*xip1j +\
-                  rhogascube_cyl[jcyl+1,icyl+1,:]*xip1jp1
+                    xip1j   = (R-par.gas.rmed[icyl])   * (par.gas.zmed[jcyl+1]-z) / (dr*dz)
+                    if xip1j < 0 or xip1j > 1:
+                        print('beware that xip1j < 0 or xip1j > 1:',i,j,xip1j,R-par.gas.rmed[icyl],dr,par.gas.zmed[jcyl+1]-z,dz)
 
-                rhogascubeh2[j,i,:] = rhogascubeh2_cyl[jcyl,icyl,:]*xij +\
-                  rhogascubeh2_cyl[jcyl+1,icyl,:]*xijp1 +\
-                  rhogascubeh2_cyl[jcyl,icyl+1,:]*xip1j +\
-                  rhogascubeh2_cyl[jcyl+1,icyl+1,:]*xip1jp1
-            
-            else:
-            # simple nearest-grid point interpolation...
-                rhogascube[j,i,:] = rhogascube_cyl[jcyl,icyl,:]    
-                rhogascubeh2[j,i,:] = rhogascubeh2_cyl[jcyl,icyl,:]
+                    xip1jp1 = (R-par.gas.rmed[icyl])   * (z-par.gas.zmed[jcyl])   / (dr*dz)
+                    if xip1jp1 < 0 or xip1jp1 > 1:
+                        print('beware that xip1jp1 < 0 or xip1jp1 > 1:',i,j,xip1jp1,R-par.gas.rmed[icyl],dr,z-par.gas.zmed[jcyl],dz)
+    
+                    rhogascube[j,i,:] = rhogascube_cyl[jcyl,icyl,:]*xij +\
+                    rhogascube_cyl[jcyl+1,icyl,:]*xijp1 +\
+                    rhogascube_cyl[jcyl,icyl+1,:]*xip1j +\
+                    rhogascube_cyl[jcyl+1,icyl+1,:]*xip1jp1
+
+                    rhogascubeh2[j,i,:] = rhogascubeh2_cyl[jcyl,icyl,:]*xij +\
+                    rhogascubeh2_cyl[jcyl+1,icyl,:]*xijp1 +\
+                    rhogascubeh2_cyl[jcyl,icyl+1,:]*xip1j +\
+                    rhogascubeh2_cyl[jcyl+1,icyl+1,:]*xip1jp1
+                
+                else:
+                # simple nearest-grid point interpolation...
+                    rhogascube[j,i,:] = rhogascube_cyl[jcyl,icyl,:]    
+                    rhogascubeh2[j,i,:] = rhogascubeh2_cyl[jcyl,icyl,:]
 
 
     print('--------- writing numberdens.binp file ----------')
@@ -182,7 +252,7 @@ def compute_gas_mass_volume_density():
         from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
         
         matplotlib.rcParams.update({'font.size': 20})
-        matplotlib.rc('font', family='Arial')
+        #matplotlib.rc('font', family='Arial')
         fontcolor='white'
 
         # azimuthally-averaged number density:   # nsec ncol nrad
@@ -195,6 +265,14 @@ def compute_gas_mass_volume_density():
         # midplane number density:
         midplane_dens = rhogascube[:,par.gas.ncol//2-1,:]  # (nsec,nrad)
         midplane_dens = np.swapaxes(midplane_dens, 0, 1)   # (nrad,nsec)
+
+        # upper plane number density:
+        upplane_dens = rhogascube[:,par.gas.ncol-1,:]  # (nsec,nrad)
+        upplane_dens = np.swapaxes(upplane_dens, 0, 1)   # (nrad,nsec)
+
+        # lower plane number density:
+        lowplane_dens = rhogascube[:,1,:]  # (nsec,nrad)
+        lowplane_dens = np.swapaxes(lowplane_dens, 0, 1)   # (nrad,nsec)
         
         radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
         X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
@@ -280,6 +358,78 @@ def compute_gas_mass_volume_density():
         plt.savefig('./'+fileout, dpi=160)
         plt.close(fig)  # close figure as we reopen figure at every output number
 
+
+        print('--------- c) plotting lower plane number density (x,y) ----------')
+
+        fig = plt.figure(figsize=(8.,8.))
+        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+        ax = plt.gca()
+        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+        ax.tick_params(axis='x', which='minor', top=True)
+        ax.tick_params(axis='y', which='minor', right=True)
+
+        ax.set_xlabel('x [au]')
+        ax.set_ylabel('y [au]')
+        ax.set_ylim(Y.min(),Y.max())
+        ax.set_xlim(X.min(),X.max())
+
+        if lowplane_dens.max()/lowplane_dens.min() > 1e3:
+            mynorm = matplotlib.colors.LogNorm(vmin=1e-3*lowplane_dens.max(),vmax=lowplane_dens.max())
+        else:
+            mynorm = matplotlib.colors.LogNorm(vmin=lowplane_dens.min(),vmax=lowplane_dens.max())
+        lowplane_dens = np.transpose(lowplane_dens)
+        CF = ax.pcolormesh(X,Y,lowplane_dens,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("top", size="2.5%", pad=0.12)
+        cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+        cax.xaxis.tick_top()
+        cax.xaxis.set_tick_params(labelsize=20, direction='out')
+
+        cax.xaxis.set_label_position('top')
+        cax.set_xlabel(strgas+' lower plane number density '+r'[cm$^{-3}$]')
+        cax.xaxis.labelpad = 8
+        
+        fileout = 'gas_number_density_lower.pdf'
+        plt.savefig('./'+fileout, dpi=160)
+        plt.close(fig)  # close figure as we reopen figure at every output number
+
+
+        print('--------- d) plotting upper plane number density (x,y) ----------')
+
+        fig = plt.figure(figsize=(8.,8.))
+        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+        ax = plt.gca()
+        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+        ax.tick_params(axis='x', which='minor', top=True)
+        ax.tick_params(axis='y', which='minor', right=True)
+
+        ax.set_xlabel('x [au]')
+        ax.set_ylabel('y [au]')
+        ax.set_ylim(Y.min(),Y.max())
+        ax.set_xlim(X.min(),X.max())
+
+        if upplane_dens.max()/upplane_dens.min() > 1e3:
+            mynorm = matplotlib.colors.LogNorm(vmin=1e-3*upplane_dens.max(),vmax=upplane_dens.max())
+        else:
+            mynorm = matplotlib.colors.LogNorm(vmin=upplane_dens.min(),vmax=upplane_dens.max())
+        upplane_dens = np.transpose(upplane_dens)
+        CF = ax.pcolormesh(X,Y,upplane_dens,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("top", size="2.5%", pad=0.12)
+        cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+        cax.xaxis.tick_top()
+        cax.xaxis.set_tick_params(labelsize=20, direction='out')
+
+        cax.xaxis.set_label_position('top')
+        cax.set_xlabel(strgas+' upper plane number density '+r'[cm$^{-3}$]')
+        cax.xaxis.labelpad = 8
+        
+        fileout = 'gas_number_density_upper.pdf'
+        plt.savefig('./'+fileout, dpi=160)
+        plt.close(fig)  # close figure as we reopen figure at every output number
+
         
     # print max of gas mass volume density at each colatitude
     if par.verbose == 'Yes':
@@ -287,7 +437,9 @@ def compute_gas_mass_volume_density():
             print('max(rho_dustcube) for gas species at colatitude index j = ', j, ' = ', rhogascube[:,j,:].max())
 
     # free RAM memory
-    del rhogascube,rhogascubeh2,rhogascube_cyl,rhogascubeh2_cyl
+    if par.hydro2D == 'Yes':
+        del rhogascube_cyl,rhogascubeh2_cyl
+    del rhogascube,rhogascubeh2
     
 
 # =========================
@@ -331,7 +483,7 @@ def recompute_gas_mass_volume_density():
     from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
         
     matplotlib.rcParams.update({'font.size': 20})
-    matplotlib.rc('font', family='Arial')
+    #matplotlib.rc('font', family='Arial')
     fontcolor='white'
 
     # azimuthally-averaged number density:   # nsec ncol nrad
@@ -344,6 +496,14 @@ def recompute_gas_mass_volume_density():
     # midplane number density:
     midplane_dens = rhogascube[:,par.gas.ncol//2-1,:]  # (nsec,nrad)
     midplane_dens = np.swapaxes(midplane_dens, 0, 1)   # (nrad,nsec)
+
+    # upper plane number density:
+    upplane_dens = rhogascube[:,par.gas.ncol-1,:]  # (nsec,nrad)
+    upplane_dens = np.swapaxes(upplane_dens, 0, 1)   # (nrad,nsec)
+
+    # lower plane number density:
+    lowplane_dens = rhogascube[:,1,:]  # (nsec,nrad)
+    lowplane_dens = np.swapaxes(lowplane_dens, 0, 1)   # (nrad,nsec)
         
     radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
     X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
@@ -426,6 +586,78 @@ def recompute_gas_mass_volume_density():
     cax.xaxis.labelpad = 8
         
     fileout = 'gas_number_density_midplane_fzout.pdf'
+    plt.savefig('./'+fileout, dpi=160)
+    plt.close(fig)  # close figure as we reopen figure at every output number
+
+
+    print('--------- c) plotting lower plane number density (x,y) ----------')
+
+    fig = plt.figure(figsize=(8.,8.))
+    plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+    ax = plt.gca()
+    ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+    ax.tick_params(axis='x', which='minor', top=True)
+    ax.tick_params(axis='y', which='minor', right=True)
+
+    ax.set_xlabel('x [au]')
+    ax.set_ylabel('y [au]')
+    ax.set_ylim(Y.min(),Y.max())
+    ax.set_xlim(X.min(),X.max())
+
+    if lowplane_dens.max()/lowplane_dens.min() > 1e3:
+        mynorm = matplotlib.colors.LogNorm(vmin=1e-3*lowplane_dens.max(),vmax=lowplane_dens.max())
+    else:
+        mynorm = matplotlib.colors.LogNorm(vmin=lowplane_dens.min(),vmax=lowplane_dens.max())
+    lowplane_dens = np.transpose(lowplane_dens)
+    CF = ax.pcolormesh(X,Y,lowplane_dens,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="2.5%", pad=0.12)
+    cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+    cax.xaxis.tick_top()
+    cax.xaxis.set_tick_params(labelsize=20, direction='out')
+
+    cax.xaxis.set_label_position('top')
+    cax.set_xlabel(strgas+' lower plane number density '+r'[cm$^{-3}$]')
+    cax.xaxis.labelpad = 8
+    
+    fileout = 'gas_number_density_lower_fzout.pdf'
+    plt.savefig('./'+fileout, dpi=160)
+    plt.close(fig)  # close figure as we reopen figure at every output number
+
+
+    print('--------- d) plotting upper plane number density (x,y) ----------')
+
+    fig = plt.figure(figsize=(8.,8.))
+    plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+    ax = plt.gca()
+    ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+    ax.tick_params(axis='x', which='minor', top=True)
+    ax.tick_params(axis='y', which='minor', right=True)
+
+    ax.set_xlabel('x [au]')
+    ax.set_ylabel('y [au]')
+    ax.set_ylim(Y.min(),Y.max())
+    ax.set_xlim(X.min(),X.max())
+
+    if upplane_dens.max()/upplane_dens.min() > 1e3:
+        mynorm = matplotlib.colors.LogNorm(vmin=1e-3*upplane_dens.max(),vmax=upplane_dens.max())
+    else:
+        mynorm = matplotlib.colors.LogNorm(vmin=upplane_dens.min(),vmax=upplane_dens.max())
+    upplane_dens = np.transpose(upplane_dens)
+    CF = ax.pcolormesh(X,Y,upplane_dens,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="2.5%", pad=0.12)
+    cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+    cax.xaxis.tick_top()
+    cax.xaxis.set_tick_params(labelsize=20, direction='out')
+
+    cax.xaxis.set_label_position('top')
+    cax.set_xlabel(strgas+' upper plane number density '+r'[cm$^{-3}$]')
+    cax.xaxis.labelpad = 8
+    
+    fileout = 'gas_number_density_upper_fzout.pdf'
     plt.savefig('./'+fileout, dpi=160)
     plt.close(fig)  # close figure as we reopen figure at every output number
 

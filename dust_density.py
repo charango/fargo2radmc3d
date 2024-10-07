@@ -397,122 +397,172 @@ def compute_dust_mass_surface_density():
 # =========================
 def compute_dust_mass_volume_density():
 
-    # extra useful quantities (code units)
-    Rinf = par.gas.redge[0:len(par.gas.redge)-1]
-    Rsup = par.gas.redge[1:len(par.gas.redge)]
-    surface  = np.zeros(par.gas.data.shape) # 2D array containing surface of each grid cell
-    surf = np.pi * (Rsup*Rsup - Rinf*Rinf) / par.gas.nsec # surface of each grid cell (code units)
-    for th in range(par.gas.nsec):
-        surface[:,th] = surf
-    
-    # Mass of gas in units of the star's mass
-    Mgas = np.sum(par.gas.data*surface)
+    # ==========================
+    # 3D simulation with fargo3d
+    # ==========================
+    if par.hydro2D == 'No':
 
-    # if hydro simulation is 2D, we first need to compute the dust's
-    # surface density before getting its mass volume density
-    if par.hydro2D == 'Yes':
-        dustcube = compute_dust_mass_surface_density()
-        print('--------- computing dust mass surface density ----------')
-        
-    print('--------- computing dust mass volume density ----------')
-    DUSTOUT = open('dust_density.binp','wb')        # binary format
-    # requested header
-    # hdr[0] = format number
-    # hdr[1] = data precision (8 means double)
-    # hdr[2] = nb of grid cells
-    # hdr[3] = nb of dust bins
-    hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol, par.nbin], dtype=int)
-    hdr.tofile(DUSTOUT)
-    
-    # array (ncol, nbin, nrad, nsec)
-    rhodustcube = np.zeros((par.gas.ncol,par.nbin,par.gas.nrad,par.gas.nsec))
+        # Allocate array
+        dustcube = np.zeros((par.nbin, par.gas.ncol, par.gas.nrad, par.gas.nsec))
 
-    # dust aspect ratio as function of ibin and r (or actually, R, cylindrical radius)
-    hd = np.zeros((par.nbin,par.gas.nrad))
-
-    # work out averaged Stokes number per size bin with fargo3d
-    # Epstein regime assumed so far in the code -> St ~ pi/2 (s x rho_int) / Sigma_gas
-    # where Sigma_gas should denote the azimuthally-averaged gas surface density here
-    # so that St is understood as a 2D array (nbin, nrad)
-    if par.fargo3d == 'Yes':
-        Stokes_fargo3d = np.zeros((par.nbin,par.gas.nrad))
-        axirhogas = np.sum(par.gas.data,axis=1)/par.gas.nsec  # in code units
-        axirhogas *= (par.gas.cumass*1e3)/((par.gas.culength*1e2)**2.)  # in g/cm^2
-        
+        # ------------------
+        # dust surface density in each size bin directly from the simulation
+        # outputs
+        # ------------------
         for ibin in range(par.nbin):
-            if par.dustfluids != 'No':
-                mysize = par.dust_size[par.dustfluids[0]-1+ibin]
-            else:
-                mysize = par.bins[ibin]
-            Stokes_fargo3d[ibin,:] = 0.5*np.pi*(mysize*1e2)*par.dust_internal_density/axirhogas  # since dust size is in meters...
-            #print('max Stokes number = ', Stokes_fargo3d[ibin,:].max())
+
+            index = int(par.dust_id[par.dustfluids[0]-1+ibin])
+            fileread = 'dust'+str(index)+'dens'+str(par.on)+'.dat'
             
-    # For the vertical expansion of the dust mass volume density, we
-    # need to define a 2D array for the dust's aspect ratio:
-    for ibin in range(par.nbin):
-        if par.fargo3d == 'No':
-            St = avgstokes[ibin]    # avg stokes number for that bin
-        if par.fargo3d == 'Yes' and par.dustfluids != 'No':
-            St = Stokes_fargo3d[ibin]
-
-        # gas aspect ratio (par.gas.rmed[i] = R in code units)
-        hgas = par.aspectratio * (par.gas.rmed)**(par.flaringindex)
+            # read dust mass volume density for each dust fluid in code units
+            dustcube[ibin,:,:,:] = Field(field=fileread, directory=par.dir).data
         
-        # vertical extension depends on grain Stokes number:
-        # T = theoretical: hd/hgas = sqrt(alpha/(St+alpha))
-        # T2 = theoretical: hd/hgas = sqrt(Dz/(St+Dz)) with Dz = 10xalpha here is the coefficient for
-        # vertical diffusion at midplane, which can differ from alpha
-        # F = extrapolation from the simulations by Fromang & Nelson 09
-        # G = Gaussian = same as gas (case of well-coupled dust for polarized intensity images)
-        if par.z_expansion == 'F':
-            hd[ibin,:] = 0.7 * hgas * ((St+1./St)/1000.)**(0.2)     
-        if par.z_expansion == 'T':
-            hd[ibin,:] = hgas * np.sqrt(par.alphaviscosity/(par.alphaviscosity+St))
-        if par.z_expansion == 'T2':
-            hd[ibin,:] = hgas * np.sqrt(10.0*par.alphaviscosity/(10.0*par.alphaviscosity+St))
-        if par.z_expansion == 'G':
-            hd[ibin,:] = hgas
-    
-    # dust aspect ratio as function of ibin, r and phi (2D array for each size bin)
-    hd2D = np.zeros((par.nbin,par.gas.nrad,par.gas.nsec))
-    for th in range(par.gas.nsec):
-        hd2D[:,:,th] = hd    # nbin, nrad, nsec
+            # conversion in g/cm^3
+            dustcube[ibin,:,:,:] *= (par.gas.cumass*1e3)/((par.gas.culength*1e2)**3.)  # dimensions: nbin, ncol, nrad, nsec
 
-    # grid radius function of ibin, r and phi (2D array for each size bin)
-    r2D = np.zeros((par.nbin,par.gas.nrad,par.gas.nsec))
-    for ibin in range(par.nbin):
+            # decrease dust mass volume density inside mask radius
+            # NB: mask_radius is in arcseconds
+            rmask_in_code_units = par.mask_radius*par.distance*par.au/par.gas.culength/1e2
+            for i in range(par.gas.nrad):
+                if (par.gas.rmed[i] < rmask_in_code_units):
+                    dustcube[ibin,:,i,:] = 0.0 # *= ( (par.gas.rmed[i]/rmask_in_code_units)**(10.0) ) 
+            
+        print('--------- computing dust mass volume density ----------')
+        DUSTOUT = open('dust_density.binp','wb')        # binary format
+        # requested header
+        # hdr[0] = format number
+        # hdr[1] = data precision (8 means double)
+        # hdr[2] = nb of grid cells
+        # hdr[3] = nb of dust bins
+        hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol, par.nbin], dtype=int)
+        hdr.tofile(DUSTOUT)
+        
+        # array (ncol, nbin, nrad, nsec)
+        # CB: valentin's smart way!
+        rhodustcube = dustcube.transpose(1,0,2,3)  
+
+    # ==========================
+    # 2D simulation with dusty fargo adsg or fargo3d
+    # ==========================
+    else:   
+
+        # extra useful quantities (code units)
+        Rinf = par.gas.redge[0:len(par.gas.redge)-1]
+        Rsup = par.gas.redge[1:len(par.gas.redge)]
+        surface  = np.zeros(par.gas.data.shape) # 2D array containing surface of each grid cell
+        surf = np.pi * (Rsup*Rsup - Rinf*Rinf) / par.gas.nsec # surface of each grid cell (code units)
         for th in range(par.gas.nsec):
-            r2D[ibin,:,th] = par.gas.rmed
-
-    # work out exponential and normalization factors exp(-z^2 / 2H_d^2)
-    # with z = r cos(theta) and H_d = h_d x R = h_d x r sin(theta)
-    # r = spherical radius, R = cylindrical radius
-    for j in range(par.gas.ncol):
-        rhodustcube[j,:,:,:] = dustcube * np.exp( -0.5*(np.cos(par.gas.tmed[j]) / hd2D)**2.0 )      # ncol, nbin, nrad, nsec
-        rhodustcube[j,:,:,:] /= ( np.sqrt(2.*np.pi) * r2D * hd2D  * par.gas.culength*1e2 )          # quantity is now in g / cm^3
-
-    # Renormalize dust's mass volume density such that the sum over the 3D grid's volume of
-    # the dust's mass volume density x the volume of each grid cell does give us the right
-    # total dust mass, which equals ratio x Mgas. Do that every time except fargo3D simulations
-    # carried out in 2D used dust fluids
-    if par.hydro2D == 'Yes' and par.dustfluids == 'No':
+            surface[:,th] = surf
         
-        rhofield = np.sum(rhodustcube, axis=1)  # sum over dust bins
-        Redge,Cedge,Aedge = np.meshgrid(par.gas.redge, par.gas.tedge, par.gas.pedge)   # ncol+1, nrad+1, Nsec+1
-        r2 = Redge*Redge
-        jacob  = r2[:-1,:-1,:-1] * np.sin(Cedge[:-1,:-1,:-1])
-        dphi   = Aedge[:-1,:-1,1:] - Aedge[:-1,:-1,:-1]     # same as 2pi/nsec
-        dr     = Redge[:-1,1:,:-1] - Redge[:-1,:-1,:-1]     # same as Rsup-Rinf
-        dtheta = Cedge[1:,:-1,:-1] - Cedge[:-1,:-1,:-1]
+        # Mass of gas in units of the star's mass
+        Mgas = np.sum(par.gas.data*surface)
 
-        # volume of a cell in cm^3
-        vol = jacob * dr * dphi * dtheta * ((par.gas.culength*1e2)**3)       # ncol, nrad, Nsec
-        total_mass = np.sum(rhofield*vol)
-        normalization_factor =  par.ratio * Mgas * (par.gas.cumass*1e3) / total_mass
-        rhodustcube = rhodustcube*normalization_factor
-        if par.verbose == 'Yes':
-            print('total dust mass after vertical expansion [g] = ', np.sum(np.sum(rhodustcube, axis=1)*vol), ' as normalization factor = ', normalization_factor)
+        # since hydro simulation is 2D here, we first need to compute the dust's
+        # surface density before getting its mass volume density
+        print('--------- computing dust mass surface density ----------')
+        dustcube = compute_dust_mass_surface_density()
+            
+        print('--------- computing dust mass volume density ----------')
+        DUSTOUT = open('dust_density.binp','wb')        # binary format
+        # requested header
+        # hdr[0] = format number
+        # hdr[1] = data precision (8 means double)
+        # hdr[2] = nb of grid cells
+        # hdr[3] = nb of dust bins
+        hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol, par.nbin], dtype=int)
+        hdr.tofile(DUSTOUT)
+        
+        # array (ncol, nbin, nrad, nsec)
+        rhodustcube = np.zeros((par.gas.ncol,par.nbin,par.gas.nrad,par.gas.nsec))
 
+        # dust aspect ratio as function of ibin and r (or actually, R, cylindrical radius)
+        hd = np.zeros((par.nbin,par.gas.nrad))
+
+        # work out averaged Stokes number per size bin with fargo3d
+        # Epstein regime assumed so far in the code -> St ~ pi/2 (s x rho_int) / Sigma_gas
+        # where Sigma_gas should denote the azimuthally-averaged gas surface density here
+        # so that St is understood as a 2D array (nbin, nrad)
+        if par.fargo3d == 'Yes':
+            Stokes_fargo3d = np.zeros((par.nbin,par.gas.nrad))
+            axirhogas = np.sum(par.gas.data,axis=1)/par.gas.nsec  # in code units
+            axirhogas *= (par.gas.cumass*1e3)/((par.gas.culength*1e2)**2.)  # in g/cm^2
+            
+            for ibin in range(par.nbin):
+                if par.dustfluids != 'No':
+                    mysize = par.dust_size[par.dustfluids[0]-1+ibin]
+                else:
+                    mysize = par.bins[ibin]
+                Stokes_fargo3d[ibin,:] = 0.5*np.pi*(mysize*1e2)*par.dust_internal_density/axirhogas  # since dust size is in meters...
+                #print('max Stokes number = ', Stokes_fargo3d[ibin,:].max())
+                
+        # For the vertical expansion of the dust mass volume density, we
+        # need to define a 2D array for the dust's aspect ratio:
+        for ibin in range(par.nbin):
+            if par.fargo3d == 'No':
+                St = avgstokes[ibin]    # avg stokes number for that bin
+            if par.fargo3d == 'Yes' and par.dustfluids != 'No':
+                St = Stokes_fargo3d[ibin]
+
+            # gas aspect ratio (par.gas.rmed[i] = R in code units)
+            hgas = par.aspectratio * (par.gas.rmed)**(par.flaringindex)
+            
+            # vertical extension depends on grain Stokes number:
+            # T = theoretical: hd/hgas = sqrt(alpha/(St+alpha))
+            # T2 = theoretical: hd/hgas = sqrt(Dz/(St+Dz)) with Dz = 10xalpha here is the coefficient for
+            # vertical diffusion at midplane, which can differ from alpha
+            # F = extrapolation from the simulations by Fromang & Nelson 09
+            # G = Gaussian = same as gas (case of well-coupled dust for polarized intensity images)
+            if par.z_expansion == 'F':
+                hd[ibin,:] = 0.7 * hgas * ((St+1./St)/1000.)**(0.2)     
+            if par.z_expansion == 'T':
+                hd[ibin,:] = hgas * np.sqrt(par.alphaviscosity/(par.alphaviscosity+St))
+            if par.z_expansion == 'T2':
+                hd[ibin,:] = hgas * np.sqrt(10.0*par.alphaviscosity/(10.0*par.alphaviscosity+St))
+            if par.z_expansion == 'G':
+                hd[ibin,:] = hgas
+        
+        # dust aspect ratio as function of ibin, r and phi (2D array for each size bin)
+        hd2D = np.zeros((par.nbin,par.gas.nrad,par.gas.nsec))
+        for th in range(par.gas.nsec):
+            hd2D[:,:,th] = hd    # nbin, nrad, nsec
+
+        # grid radius function of ibin, r and phi (2D array for each size bin)
+        r2D = np.zeros((par.nbin,par.gas.nrad,par.gas.nsec))
+        for ibin in range(par.nbin):
+            for th in range(par.gas.nsec):
+                r2D[ibin,:,th] = par.gas.rmed
+
+        # work out exponential and normalization factors exp(-z^2 / 2H_d^2)
+        # with z = r cos(theta) and H_d = h_d x R = h_d x r sin(theta)
+        # r = spherical radius, R = cylindrical radius
+        for j in range(par.gas.ncol):
+            rhodustcube[j,:,:,:] = dustcube * np.exp( -0.5*(np.cos(par.gas.tmed[j]) / hd2D)**2.0 )      # ncol, nbin, nrad, nsec
+            rhodustcube[j,:,:,:] /= ( np.sqrt(2.*np.pi) * r2D * hd2D  * par.gas.culength*1e2 )          # quantity is now in g / cm^3
+
+        # Renormalize dust's mass volume density such that the sum over the 3D grid's volume of
+        # the dust's mass volume density x the volume of each grid cell does give us the right
+        # total dust mass, which equals ratio x Mgas. Do that every time except fargo3D simulations
+        # carried out in 2D used dust fluids
+        if par.dustfluids == 'No':
+            
+            rhofield = np.sum(rhodustcube, axis=1)  # sum over dust bins
+            Redge,Cedge,Aedge = np.meshgrid(par.gas.redge, par.gas.tedge, par.gas.pedge)   # ncol+1, nrad+1, Nsec+1
+            r2 = Redge*Redge
+            jacob  = r2[:-1,:-1,:-1] * np.sin(Cedge[:-1,:-1,:-1])
+            dphi   = Aedge[:-1,:-1,1:] - Aedge[:-1,:-1,:-1]     # same as 2pi/nsec
+            dr     = Redge[:-1,1:,:-1] - Redge[:-1,:-1,:-1]     # same as Rsup-Rinf
+            dtheta = Cedge[1:,:-1,:-1] - Cedge[:-1,:-1,:-1]
+
+            # volume of a cell in cm^3
+            vol = jacob * dr * dphi * dtheta * ((par.gas.culength*1e2)**3)       # ncol, nrad, Nsec
+            total_mass = np.sum(rhofield*vol)
+            normalization_factor =  par.ratio * Mgas * (par.gas.cumass*1e3) / total_mass
+            rhodustcube = rhodustcube*normalization_factor
+            if par.verbose == 'Yes':
+                print('total dust mass after vertical expansion [g] = ', np.sum(np.sum(rhodustcube, axis=1)*vol), ' as normalization factor = ', normalization_factor)
+
+
+    # =======================
     # Simple dust sublimation model in case dust temperature set to
     # that of the hydro simulation:
     if par.dustsublimation == 'Yes' and par.Tdust_eq_Thydro == 'Yes':
@@ -552,7 +602,9 @@ def compute_dust_mass_volume_density():
     DUSTOUT.close()
 
     # free RAM memory
-    del rhodustcube, dustcube, hd2D, r2D
+    if par.hydro2D == 'Yes':
+        del hd2D, r2D
+    del rhodustcube, dustcube
     
 
 # =========================
@@ -612,7 +664,7 @@ def plot_dust_density(mystring):
     from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
         
     matplotlib.rcParams.update({'font.size': 20})
-    matplotlib.rc('font', family='Arial')
+    #matplotlib.rc('font', family='Arial')
     fontcolor='white'
     
     # plot azimuthally-averaged dust density vs. radius and colatitude for smallest and largest bin sizes
@@ -847,7 +899,7 @@ def plot_dust_to_gas_density():
     import matplotlib.ticker as ticker
     from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
     matplotlib.rcParams.update({'font.size': 20})
-    matplotlib.rc('font', family='Arial')
+    #matplotlib.rc('font', family='Arial')
     fontcolor='white'
     
     print('--------- plotting midplane dust-to-gas density ratio   ----------')

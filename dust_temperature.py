@@ -41,7 +41,7 @@ def plot_dust_temperature(mystring):
     from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator, LogLocator, LogFormatter)
         
     matplotlib.rcParams.update({'font.size': 20})
-    matplotlib.rc('font', family='Arial')
+    #matplotlib.rc('font', family='Arial')
     fontcolor='white'
 
     
