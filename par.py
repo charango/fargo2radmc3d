@@ -101,7 +101,7 @@ else:
     else:
         print('neither gawk not awk are installed on your system! I cannot use them to extract relevant parameters from your .par parameter file in the simulation directory. Please install either awk or gawk.')
 
-        
+
 # Check if Fargo3D simulation was carried out in 2D or in 3D by
 # fetching NZ in the variables.par file:
 if fargo3d == 'Yes':
@@ -397,8 +397,10 @@ from field import *
 from mesh import *
 gas  = Field(field='gasdens'+str(on)+'.dat', directory=dir)
 
+'''
 if (minmaxaxis == '#'):
     minmaxaxis = 1000.0   # arbitrarilly large number
+'''
 
 # Color map
 if not('mycolormap' in open('params.dat').read()):

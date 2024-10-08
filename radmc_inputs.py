@@ -204,7 +204,17 @@ def write_lines(specie,lines_mode):
 
     # Get molecular data file
     molecular_file = 'molecule_'+str(par.gasspecies)+'.inp'
-    if os.path.isfile(molecular_file) == False:
+
+    datafile = str(par.gasspecies)
+    if par.gasspecies == 'hco+':
+        datafile = 'hco+@xpol'
+    if par.gasspecies == 'so':
+        datafile = 'so@lique'
+    if par.gasspecies == 'cs':
+        datafile = 'cs'
+    dat_file = datafile+'.dat'
+
+    if (os.path.isfile(molecular_file) == False) and (os.path.isfile(dat_file) == False):
 
         # ---
         # check if curl is installed
@@ -212,18 +222,11 @@ def write_lines(specie,lines_mode):
         if which('curl') is None:
             sys.exit('curl is not installed on your system! I cannot download the molecular data file. Please install curl and restart!')
         # ---
-        
+    
         if par.verbose == 'Yes':
             print('--------- Downloading molecular data file ----------')
-        datafile = str(par.gasspecies)
-        if par.gasspecies == 'hco+':
-            datafile = 'hco+@xpol'
-        if par.gasspecies == 'so':
-            datafile = 'so@lique'
-        if par.gasspecies == 'cs':
-            datafile = 'cs'
             
-        command = 'curl -O https://home.strw.leidenuniv.nl/~moldata/datafiles/'+datafile+'.dat'
+        command = 'curl -O https://home.strw.leidenuniv.nl/~moldata/datafiles/'+dat_file
         print(command)
         os.system(command)
         command = 'mv '+datafile+'.dat molecule_'+str(par.gasspecies)+'.inp'

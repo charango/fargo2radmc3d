@@ -302,8 +302,8 @@ def exportfits():
             im = moment0   # non-convolved quantity
         if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
             im = moment1/moment0 # ratio of two beam-convolved quantities (convolution not redone afterwards)
-    
 
+    
     # ----------
     # Finally write (modified) images in fits file
     # ----------
