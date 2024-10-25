@@ -75,11 +75,12 @@ def compute_gas_velocity():
         vphi3D   *= (par.gas.culength*1e2)/(par.gas.cutime) #cm/s
         vphi3D0  *= (par.gas.culength*1e2)/(par.gas.cutime) #cm/s
 
-    else:
+    else:  # 2D simulation carried out with dusty fargo adsg or Fargo 3D
+
         # arrays allocation
         vrad3D_cyl   = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))   # zeros!
         vphi3D_cyl   = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))   # zeros!
-        vphi3D0_cyl   = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))   # zeros!
+        vphi3D0_cyl  = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))   # zeros!
         vtheta3D     = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))   # zeros!
         vrad3D       = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))   # zeros!
         vphi3D       = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))   # zeros!
@@ -143,7 +144,20 @@ def compute_gas_velocity():
                 # simple nearest-grid point interpolation...
                     vrad3D[j,i,:] = vrad3D_cyl[jcyl,icyl,:]   
                     vphi3D[j,i,:] = vphi3D_cyl[jcyl,icyl,:]
-                    vphi3D0[j,i,:]= vphi3D0_cyl[jcyl,icyl,:] 
+                    vphi3D0[j,i,:]= vphi3D0_cyl[jcyl,icyl,:]
+                
+                if (('TestVz' in open('params.dat').read()) and (par.TestVz == 'Yes')):  # just to test: add a vertical velocity in planets wakes
+                    for k in range(par.gas.nsec):
+                        if (vphi2D[i,k] - vphi2D0[i,k])/vphi2D0[i,k] > 0.04:
+                            if j < par.gas.ncol//2-2:
+                                vtheta3D[j,i,k] = -0.2*vphi2D0[i,k]
+                            else:
+                                vtheta3D[j,i,k] = 0.2*vphi2D0[i,k]
+                        elif (vphi2D[i,k] - vphi2D0[i,k])/vphi2D0[i,k] < -0.04:
+                            if j < par.gas.ncol//2-2:
+                                vtheta3D[j,i,k] = 0.2*vphi2D0[i,k]
+                            else:
+                                vtheta3D[j,i,k] = -0.2*vphi2D0[i,k]
 
                     
     print('--------- writing gas_velocity.inp file ----------')
@@ -189,6 +203,9 @@ def compute_gas_velocity():
         # midplane azimuthal velocity:
         vtmid  = vphi3D[par.gas.ncol//2-1,:,:]/1e5 # nrad, nsec   # in km/s
         vtmid0 = vphi3D0[par.gas.ncol//2-1,:,:]/1e5 # nrad, nsec   # in km/s
+
+        # upper vertical velocity:
+        vvupper  = vtheta3D[par.gas.ncol-1,:,:]/1e5 # nrad, nsec   # in km/s
             
         radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
         X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
@@ -272,10 +289,42 @@ def compute_gas_velocity():
         plt.close(fig)  # close figure as we reopen figure at every output number
 
 
-        print('--------- c) plotting line-of-sight velocity in sky plane ----------')
+        print('--------- c) plotting upper vertical velocity (x,y) ----------')
+
+        fig = plt.figure(figsize=(8.,8.))
+        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+        ax = plt.gca()
+        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+        ax.tick_params(axis='x', which='minor', top=True)
+        ax.tick_params(axis='y', which='minor', right=True)
+        
+        ax.set_xlabel('x [au]')
+        ax.set_ylabel('y [au]')
+        ax.set_ylim(Y.min(),Y.max())
+        ax.set_xlim(X.min(),X.max())
+            
+        mynorm = matplotlib.colors.Normalize(vmin=vvupper.min(),vmax=vvupper.max())
+        vvupper = np.transpose(vvupper)
+        CF = ax.pcolormesh(X,Y,vvupper,cmap='nipy_spectral',norm=mynorm,rasterized=True)
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("top", size="2.5%", pad=0.12)
+        cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+        cax.xaxis.tick_top()
+        cax.xaxis.set_tick_params(labelsize=20, direction='out')
+
+        cax.xaxis.set_label_position('top')
+        cax.set_xlabel(strgas+' above vertical velocity '+r'[km s$^{-1}$]')
+        cax.xaxis.labelpad = 8
+        
+        fileout = 'vvert_upper.pdf'
+        plt.savefig('./'+fileout, dpi=160)
+        plt.close(fig)  # close figure as we reopen figure at every output number
+
+
+        print('--------- d) plotting line-of-sight velocity in sky plane ----------')
 
         vlos_disc_plane = np.zeros((par.gas.nrad,par.gas.nsec))
-
 
         # sky-plane x- and y- coordinates in arcseconds
         Xs = np.zeros((par.nbpixels,par.nbpixels))
@@ -293,10 +342,14 @@ def compute_gas_velocity():
         vtmid0 = vphi3D0[par.gas.ncol//2-1,:,:]/1e5 # nrad, nsec  # in km/s
         vtmid0 = np.roll(vtmid0,shift=int(par.gas.nsec//2),axis=1)
 
+        # midplane vertical velocity:
+        vzmid = vtheta3D[par.gas.ncol//2-1,:,:]/1e5 # nrad, nsec  # in km/s
+        vzmid = np.roll(vzmid,shift=int(par.gas.nsec//2),axis=1)
+
 
         # minimum and maximum values of x- and y-coordinates on sky-plane:
         if par.minmaxaxis == '#':
-            maxXsYs = 1.0
+            maxXsYs = par.gas.culength*par.gas.rmed[par.gas.nrad-1]/(par.au*1e-2)/par.distance
         else:
             maxXsYs = par.minmaxaxis
 
@@ -375,16 +428,21 @@ def compute_gas_velocity():
 
                     #vrd = vrmid[id,jd]
                     #vtd = vtmid[id,jd]
+                    vzd = vzmid[id,jd]
 
                 else:
                     vtd = 0.0
                     vtd0= 0.0
                     vrd = 0.0
 
+                    vzd = 0.0
+
                 # line-of-sight velocity in skyplane
-                v_los[i,j] = vtd*np.sin(incl)*np.cos(math.atan2(ysc,xsc)) + vrd*np.sin(incl)*np.sin(math.atan2(ysc,xsc))
+                #v_los[i,j] = vtd*np.sin(incl)*np.cos(math.atan2(ysc,xsc)) + vrd*np.sin(incl)*np.sin(math.atan2(ysc,xsc))
+                v_los[i,j] = vtd*np.sin(incl)*np.cos(math.atan2(ysc,xsc)) + vrd*np.sin(incl)*np.sin(math.atan2(ysc,xsc)) - vzd*np.cos(incl)
                 # line-of-sight residual velocity in skyplane (initial azimuthal velocity is subtracted; initial radial velocity is not)
-                v_los_residual[i,j] = (vtd-vtd0)*np.sin(incl)*np.cos(math.atan2(ysc,xsc)) + vrd*np.sin(incl)*np.sin(math.atan2(ysc,xsc))
+                # v_los_residual[i,j] = (vtd-vtd0)*np.sin(incl)*np.cos(math.atan2(ysc,xsc)) + vrd*np.sin(incl)*np.sin(math.atan2(ysc,xsc))
+                v_los_residual[i,j] = (vtd-vtd0)*np.sin(incl)*np.cos(math.atan2(ysc,xsc)) + vrd*np.sin(incl)*np.sin(math.atan2(ysc,xsc)) - vzd*np.cos(incl)
 
         print('min and max of v_los = ',v_los.min(),v_los.max())
         print('min and max of v_los_residual = ',v_los_residual.min(),v_los_residual.max())
@@ -401,9 +459,11 @@ def compute_gas_velocity():
         ax.set_ylim(-maxXsYs,maxXsYs)
         ax.set_xlim(maxXsYs,-maxXsYs)
 
-        mynorm = matplotlib.colors.Normalize(vmin=v_los.min(),vmax=v_los.max())
+        #mynorm = matplotlib.colors.Normalize(vmin=v_los.min(),vmax=v_los.max())
+        vlosabs = np.maximum(np.abs(v_los.min()),np.abs(v_los.max()))
+        mynorm = matplotlib.colors.Normalize(vmin=-vlosabs,vmax=vlosabs)
         CF = ax.imshow(v_los, cmap='RdBu_r', origin='lower', interpolation='bilinear', extent=[-maxXsYs,maxXsYs,-maxXsYs,maxXsYs], norm=mynorm, aspect='auto')
-        ax.contour(v_los,levels=10,color='black', linestyles='-',extent=[-maxXsYs,maxXsYs,-maxXsYs,maxXsYs])
+        #ax.contour(v_los,levels=10,color='black', linestyles='-',extent=[-maxXsYs,maxXsYs,-maxXsYs,maxXsYs])
 
         # Add + sign at the origin
         ax.plot(0.0,0.0,'+',color='white',markersize=10)
@@ -437,17 +497,11 @@ def compute_gas_velocity():
         ax.set_ylim(-maxXsYs,maxXsYs)
         ax.set_xlim(maxXsYs,-maxXsYs)
 
-        abs_min_max = v_los_residual.max()
-        if np.abs(v_los_residual.min()) > abs_min_max:
-            abs_min_max = np.abs(v_los_residual.min())
-
-        # if max_colorscale is set in params.dat, use this value in colorscale for the residual line of sight velocity image
-        if ( ('max_colorscale' in open('params.dat').read()) and (par.max_colorscale != 0.0) ):
-            abs_min_max = par.max_colorscale
-
-        mynorm = matplotlib.colors.Normalize(vmin=-abs_min_max,vmax=abs_min_max)
+        vlosabs = np.maximum(np.abs(v_los_residual.min()),np.abs(v_los_residual.max()))
+        mynorm = matplotlib.colors.Normalize(vmin=-vlosabs,vmax=vlosabs)
         CF = ax.imshow(v_los_residual, cmap='RdBu_r', origin='lower', interpolation='bilinear', extent=[-maxXsYs,maxXsYs,-maxXsYs,maxXsYs], norm=mynorm, aspect='auto')
-       
+        #ax.contour(v_los,levels=10,color='black', linestyles='-',extent=[-maxXsYs,maxXsYs,-maxXsYs,maxXsYs])
+
         # Add + sign at the origin
         ax.plot(0.0,0.0,'+',color='white',markersize=10)
 
@@ -465,5 +519,6 @@ def compute_gas_velocity():
         plt.savefig('./'+fileout, dpi=160)
         plt.close(fig)  # close figure as we reopen figure at every output number
 
-        
-    del vrad3D, vphi3D, vphi3D0, vtheta3D, vrad3D_cyl, vphi3D_cyl, vphi3D0_cyl
+    if par.hydro2D == 'Yes':
+        del vrad3D_cyl, vphi3D_cyl, vphi3D0_cyl
+    del vrad3D, vphi3D, vphi3D0, vtheta3D

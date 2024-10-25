@@ -4,9 +4,9 @@
 # Program post-processes FARGO2D/3D outputs as inputs for RADMC-3D.
 # It can run with either Python 2.X or Python 3.X.
 # 
-# code written by Clement Baruteau (CB), Sebastian Perez (SP) and
-# Marcelo Barraza (MB) with substantial contributions from Simon
-# Casassus (SC) and Gaylor Wafflard-Fernandez (GWF)
+# code written by Clement Baruteau (CB), Sebastian Perez (SP), 
+# Marcelo Barraza (MB) with substantial contributions from 
+# Simon Casassus (SC), Valentin Oncle (VC) and Gaylor Wafflard-Fernandez (GWF)
 #
 # =================================================================== 
 
@@ -14,8 +14,6 @@
 #            TO DO LIST
 # =================================
 # - add text banner with 'banner' command
-# - results from actual 3D simulations from Fargo3D (check
-# fargo2python): check latitude expression in mesh.py
 # - check again that all goes well without x-axisflip!
 # =================================
 
@@ -97,18 +95,19 @@ if par.RTdust_or_gas == 'dust':
 if par.RTdust_or_gas == 'gas':
 
     # we start by computing gas temperature, density and velocity
-    if par.recalc_gas_quantities == 'Yes':
+    if (par.recalc_gas_quantities == 'Yes' or par.plot_gas_quantities == 'Yes'):
 
         from gas_density import *
         from gas_temperature import *
         from gas_velocity import *
-        
-        print('--------- Setting gas temperature to temperature of hydro simulation ----------')
-        compute_hydro_temperature()
-        if par.plot_gas_quantities == 'Yes':
-            print('--------- Plotting gas temperature ----------')
-            plot_gas_temperature()
-            
+
+        if (par.Tdust_eq_Thydro == 'Yes' or (par.Tdust_eq_Thydro == 'No' and par.Tdust_eq_Tgas == 'No') ):
+            print('--------- Computing temperature of hydro simulation ----------')
+            compute_hydro_temperature()
+            if par.plot_gas_quantities == 'Yes':
+                print('--------- Plotting hydro temperature ----------')
+                plot_gas_temperature()
+                
         print('--------- Computing gas density ----------')
         compute_gas_mass_volume_density()
         
@@ -134,7 +133,7 @@ if par.RTdust_or_gas == 'both':
         tgas_eq_tdust = 0
     
     # start by computing gas temperature, density and velocity
-    if par.recalc_gas_quantities == 'Yes':
+    if (par.recalc_gas_quantities == 'Yes' or par.plot_gas_quantities == 'Yes'):
 
         from gas_density import *
         from gas_temperature import *

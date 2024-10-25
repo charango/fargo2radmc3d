@@ -44,71 +44,102 @@ def compute_hydro_temperature():
         # hdr[3] = nb of dust bins
         hdr = np.array([1, 8, par.gas.nrad*par.gas.nsec*par.gas.ncol, par.nbin], dtype=int)
         hdr.tofile(TEMPOUT)
-            
-    gas_temp     = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))
-    gas_temp_cyl = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))
 
-    # Test if energy equation was used or not. For that, we just
-    # need to check if a file TemperatureXX.dat was written in
-    # Fargo run's directory:
-    # Cuidadin: won't apply to FARGO-3D runs!
-    input_file = par.dir+'/Temperature'+str(par.on)+'.dat'
+    # --------------------------
+    # 3D simulation with fargo3d
+    # --------------------------
+    if par.hydro2D == 'No':
 
-    if os.path.isfile(input_file) == False:
-        thydro = par.aspectratio*par.aspectratio*par.gas.cutemp*par.gas.rmed**(-1.0+2.0*par.flaringindex)
-        for k in range(par.gas.nsec):
-            for j in range(par.gas.nver):
-                gas_temp_cyl[j,:,k] = thydro  # only function of R (cylindrical radius)
-    # case existing gas Temperature file:
-    else:
-        thydro = Field(field='Temperature'+str(par.on)+'.dat', directory=par.dir).data  # in code units
-        thydro *= par.gas.cutemp  # (nrad,nsec) in K
-        for j in range(par.gas.nver):
-            gas_temp_cyl[j,:,:] = thydro    # function of R and phi
+        # Allocate arrays
+        gas_temp     = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))
 
-    # Now, sweep through the spherical grid
-    for j in range(par.gas.ncol):
-        for i in range(par.gas.nrad):
-                
-            R = par.gas.rmed[i]*np.sin(par.gas.tmed[j])  # cylindrical radius
-            icyl = np.argmin(np.abs(par.gas.rmed-R))
-            if R < par.gas.rmed[icyl] and icyl > 0:
-                icyl-=1
-                
-            z = par.gas.rmed[i]*np.cos(par.gas.tmed[j])  # vertical altitude
-            jcyl = np.argmin(np.abs(par.gas.zmed-z))
-            if z < par.gas.zmed[jcyl] and jcyl > 0:
-                jcyl-=1
-
-            # bilinear interpolation
-            if (icyl < par.gas.nrad-1 and jcyl < par.gas.nver-1 and icyl > 0):
-                dr = par.gas.rmed[icyl+1]-par.gas.rmed[icyl]
-                dz = par.gas.zmed[jcyl+1]-par.gas.zmed[jcyl]
-                
-                xij     = (par.gas.rmed[icyl+1]-R) * (par.gas.zmed[jcyl+1]-z) / (dr*dz)
-                if xij < 0 or xij > 1:
-                    print('beware that xij < 0 or xij > 1 in gas_temperature.py:',i,j,icyl,jcyl,xij,par.gas.rmed[icyl],R,par.gas.rmed[icyl+1],dr,par.gas.zmed[jcyl],z,par.gas.zmed[jcyl+1],dz)
-                    
-                xijp1   = (par.gas.rmed[icyl+1]-R) * (z-par.gas.zmed[jcyl])   / (dr*dz)
-                if xijp1 < 0 or xijp1 > 1:
-                    print('beware that xijp1 < 0 or xijp1 > 1 in gas_temperature.py:',i,j,icyl,jcyl,xijp1,par.gas.rmed[icyl+1]-R,dr,z-par.gas.zmed[jcyl],dz)
-                
-                xip1j   = (R-par.gas.rmed[icyl])   * (par.gas.zmed[jcyl+1]-z) / (dr*dz)
-                if xip1j < 0 or xip1j > 1:
-                    print('beware that xip1j < 0 or xip1j > 1 in gas_temperature.py:',i,j,icyl,jcyl,xip1j,R-par.gas.rmed[icyl],dr,par.gas.zmed[jcyl+1]-z,dz)
-
-                xip1jp1 = (R-par.gas.rmed[icyl])   * (z-par.gas.zmed[jcyl])   / (dr*dz)
-                if xip1jp1 < 0 or xip1jp1 > 1:
-                    print('beware that xip1jp1 < 0 or xip1jp1 > 1 in gas_temperature.py:',i,j,icyl,jcyl,xip1jp1,R-par.gas.rmed[icyl],dr,z-par.gas.zmed[jcyl],dz)
-
-                gas_temp[j,i,:] = gas_temp_cyl[jcyl,icyl,:]*xij +\
-                  gas_temp_cyl[jcyl+1,icyl,:]*xijp1 +\
-                  gas_temp_cyl[jcyl,icyl+1,:]*xip1j +\
-                  gas_temp_cyl[jcyl+1,icyl+1,:]*xip1jp1
-                        
+        if "ISOTHERMAL" in open(par.dir+'summary'+str(on)+'.dat',"r").read():
+            c_s = Field(field='gasenergy'+str(par.on)+'.dat', directory=par.dir).data  # in code units; gasenergyX.dat countains the values of the sound speed
+            thydro = c_s*c_s            # in code units, the sound velocity c_s equals c_s = sqrt(T)
+        else:
+            e = Field(field='gasenergy'+str(par.on)+'.dat', directory=par.dir).data    # in code units; gasenergyX.dat contains the thermal energy per unit volume
+            rho = Field(field='gasdens'+str(par.on)+'.dat', directory=par.dir).data
+            command = par.awk_command+' " /^GAMMA/ " '+par.dir+'*.par'
+            if sys.version_info[0] < 3:
+                buf = subprocess.check_output(command, shell=True)
             else:
-            # simple nearest-grid point interpolation...
-                gas_temp[j,i,:] = gas_temp_cyl[jcyl,icyl,:]   
+                buf = subprocess.getoutput(command)
+            gamma = float(buf.split()[1])    
+            thydro = (gamma-1.0)*e/rho
+
+        thydro *= par.gas.cutemp    # (ncol,nrad,nsec) in K
+        gas_temp = thydro
+
+    # --------------------------
+    # 2D simulation with dusty fargo adsg or fargo3d
+    # --------------------------
+    else:
+            
+        gas_temp     = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))
+        gas_temp_cyl = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))
+
+        # Test if energy equation was used or not. For that, we just
+        # need to check if a file TemperatureXX.dat was written in
+        # Fargo run's directory:
+        # Cuidadin: won't apply to FARGO-3D runs!
+        input_file = par.dir+'/Temperature'+str(par.on)+'.dat'
+
+        if os.path.isfile(input_file) == False:
+            thydro = par.aspectratio*par.aspectratio*par.gas.cutemp*par.gas.rmed**(-1.0+2.0*par.flaringindex)
+            for k in range(par.gas.nsec):
+                for j in range(par.gas.nver):
+                    gas_temp_cyl[j,:,k] = thydro  # only function of R (cylindrical radius)
+        # case existing gas Temperature file:
+        else:
+            thydro = Field(field='Temperature'+str(par.on)+'.dat', directory=par.dir).data  # in code units
+            thydro *= par.gas.cutemp  # (nrad,nsec) in K
+            for j in range(par.gas.nver):
+                gas_temp_cyl[j,:,:] = thydro    # function of R and phi
+
+        # Now, sweep through the spherical grid
+        for j in range(par.gas.ncol):
+            for i in range(par.gas.nrad):
+                    
+                R = par.gas.rmed[i]*np.sin(par.gas.tmed[j])  # cylindrical radius
+                icyl = np.argmin(np.abs(par.gas.rmed-R))
+                if R < par.gas.rmed[icyl] and icyl > 0:
+                    icyl-=1
+                    
+                z = par.gas.rmed[i]*np.cos(par.gas.tmed[j])  # vertical altitude
+                jcyl = np.argmin(np.abs(par.gas.zmed-z))
+                if z < par.gas.zmed[jcyl] and jcyl > 0:
+                    jcyl-=1
+
+                # bilinear interpolation
+                if (icyl < par.gas.nrad-1 and jcyl < par.gas.nver-1 and icyl > 0):
+                    dr = par.gas.rmed[icyl+1]-par.gas.rmed[icyl]
+                    dz = par.gas.zmed[jcyl+1]-par.gas.zmed[jcyl]
+                    
+                    xij     = (par.gas.rmed[icyl+1]-R) * (par.gas.zmed[jcyl+1]-z) / (dr*dz)
+                    if xij < 0 or xij > 1:
+                        print('beware that xij < 0 or xij > 1 in gas_temperature.py:',i,j,icyl,jcyl,xij,par.gas.rmed[icyl],R,par.gas.rmed[icyl+1],dr,par.gas.zmed[jcyl],z,par.gas.zmed[jcyl+1],dz)
+                        
+                    xijp1   = (par.gas.rmed[icyl+1]-R) * (z-par.gas.zmed[jcyl])   / (dr*dz)
+                    if xijp1 < 0 or xijp1 > 1:
+                        print('beware that xijp1 < 0 or xijp1 > 1 in gas_temperature.py:',i,j,icyl,jcyl,xijp1,par.gas.rmed[icyl+1]-R,dr,z-par.gas.zmed[jcyl],dz)
+                    
+                    xip1j   = (R-par.gas.rmed[icyl])   * (par.gas.zmed[jcyl+1]-z) / (dr*dz)
+                    if xip1j < 0 or xip1j > 1:
+                        print('beware that xip1j < 0 or xip1j > 1 in gas_temperature.py:',i,j,icyl,jcyl,xip1j,R-par.gas.rmed[icyl],dr,par.gas.zmed[jcyl+1]-z,dz)
+
+                    xip1jp1 = (R-par.gas.rmed[icyl])   * (z-par.gas.zmed[jcyl])   / (dr*dz)
+                    if xip1jp1 < 0 or xip1jp1 > 1:
+                        print('beware that xip1jp1 < 0 or xip1jp1 > 1 in gas_temperature.py:',i,j,icyl,jcyl,xip1jp1,R-par.gas.rmed[icyl],dr,z-par.gas.zmed[jcyl],dz)
+
+                    gas_temp[j,i,:] = gas_temp_cyl[jcyl,icyl,:]*xij +\
+                    gas_temp_cyl[jcyl+1,icyl,:]*xijp1 +\
+                    gas_temp_cyl[jcyl,icyl+1,:]*xip1j +\
+                    gas_temp_cyl[jcyl+1,icyl+1,:]*xip1jp1
+                            
+                else:
+                # simple nearest-grid point interpolation...
+                    gas_temp[j,i,:] = gas_temp_cyl[jcyl,icyl,:]   
+
 
     # Finally write temperature file
     if ( (par.RTdust_or_gas == 'gas') or (par.RTdust_or_gas == 'both' and par.Tdust_eq_Thydro == 'No' and par.Tdust_eq_Tgas == 'No') ):
@@ -119,9 +150,11 @@ def compute_hydro_temperature():
         gas_temp = np.swapaxes(gas_temp, 0, 2)  # nsec ncol nrad
         gas_temp.tofile(TEMPOUT)
         TEMPOUT.close()
-        gas_temp_cyl.tofile(TEMPOUTCYL)         # nver nrad nsec
-        TEMPOUTCYL.close() 
-        del gas_temp, gas_temp_cyl
+        if par.hydro2D == 'Yes':
+            gas_temp_cyl.tofile(TEMPOUTCYL)         # nver nrad nsec
+            TEMPOUTCYL.close()
+            del gas_temp_cyl
+        del gas_temp
 
     if ( (par.RTdust_or_gas == 'dust' or par.RTdust_or_gas == 'both') and par.Tdust_eq_Thydro == 'Yes'):
         # Define 4D dust temperature array

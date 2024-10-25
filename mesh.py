@@ -3,6 +3,8 @@ import math
 
 # import global variables
 import par
+import sys
+import subprocess
 
 # ---------------------
 # building mesh arrays 
@@ -51,22 +53,37 @@ class Mesh():
         # -----
         # colatitude
         # -----
-        if par.fargo3d == 'Yes' and par.hydro2D == 'No':
+        if par.fargo3d == 'Yes' and par.hydro2D == 'No':  # 3D simulation with fargo3d
             try:
-                domain_col = np.loadtxt(directory+"domain_z.dat")  # radial interfaces of grid cells
+                domain_col = np.loadtxt(directory+"domain_z.dat")  # latitudinal interfaces of grid cells
             except IOError:
                 print('IOError')
-            ym_lower = domain_col[3:-3]           # lat-edge
-            # Below: need to check...
-            ym_lower = ym_lower[::-1]
-            # then define array of colatitudes below midplane
-            ym_upper = np.pi-ym_lower
             
-        else:            
+            # check if 3D simulation covers half a disk only in the latitudinal direction 
+            command = par.awk_command+' " /^ZMAX/ " '+directory+'/variables.par'
+            if sys.version_info[0] < 3:   # python 2.X
+                buf = subprocess.check_output(command, shell=True)
+            else:                         # python 3.X
+                buf = subprocess.getoutput(command)
+            zmax = float(buf.split()[1])
+
             # We can't do mirror symmetry in RADMC3D when scattering_mode_max = 2
             # (i.e., when anisotropic scattering is assumed). We need to define the
-            # grid's colatitude on both sides about the disc midplane (defined
-            # where theta = pi/2)
+            # grid's colatitude on both sides about the disc midplane:
+            if np.abs(zmax - 1.57) < 0.01:             # half disk
+                ym_lower = domain_col[3:-3]            # lat-edge
+                # Below: need to check...
+                ym_lower = ym_lower[::-1]
+                # then define array of colatitudes below midplane
+                ym_upper = np.pi-ym_lower
+                # and finally concatenate
+                ym = np.concatenate([ym_lower[::-1],ym_upper])
+            else:
+                ym = domain_col[3:-3]           # lat-edge
+            
+        else:    # 2D simulation with dusty fargo adsg or fargo3d
+            # Again, we need to define the grid's colatitude on both sides about 
+            # the disc midplane (defined where theta = pi/2)
             #
             # thmin is set as pi/2 - atan(zmax_over_H*h) with h the gas
             # aspect ratio zmax_over_H = z_max_grid / pressure scale
@@ -85,9 +102,9 @@ class Mesh():
                 ym_lower = -ymp+thmin+thmax
             # then define array of colatitudes below midplane
             ym_upper = np.pi-ym_lower[1:self.ncol//2+1]
+            # finally concatenate
+            ym = np.concatenate([ym_lower[::-1],ym_upper])
 
-        # and finally concatenate
-        ym = np.concatenate([ym_lower[::-1],ym_upper])
         self.tedge = ym                    # colatitude of cell faces
         self.tmed = 0.5*(ym[:-1] + ym[1:]) # colatitude of cell centers
 

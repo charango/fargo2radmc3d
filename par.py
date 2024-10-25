@@ -395,7 +395,7 @@ if fargo3d == 'No':
 # structure (rmed, Nrad etc.)
 from field import *
 from mesh import *
-gas  = Field(field='gasdens'+str(on)+'.dat', directory=dir)
+gas = Field(field='gasdens'+str(on)+'.dat', directory=dir)
 
 '''
 if (minmaxaxis == '#'):

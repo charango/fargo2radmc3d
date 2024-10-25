@@ -102,6 +102,38 @@ def plot_dust_temperature(mystring):
         plt.savefig('./'+fileout, dpi=160)
         plt.close(fig)  # close figure as we reopen figure at every output number
 
+
+    print('--------- Plotting azimuthally-averaged midplane temperature profile (R) for all dust size bins in one figure ----------')
+    fig = plt.figure(figsize=(8.,8.))
+    plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+    ax = plt.gca()
+    ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+    ax.tick_params(axis='x', which='minor', top=True)
+    ax.tick_params(axis='y', which='minor', right=True)
+    
+    ax.set_xlabel('Radius [au]')
+    ax.set_ylabel('Temperature [K]')
+    ax.set_ylim(axitemp.min(),axitemp.max())
+    ax.set_xlim(R.min(),R.max())
+
+    # Loop over size bins:
+    for l in range(par.nbin):
+        strsize = str_fmt(par.bins[l])+' m'
+        ax.plot(par.gas.rmed*par.gas.culength/1.5e11,axitemp[l,par.gas.ncol//2-1,:],label=strsize,color=par.c20[l])   # R in au
+    ax.legend(frameon=False,fontsize=15,loc='upper right')
+
+    if par.dustsublimation == 'No':
+        fileout = 'dust_midplane_axitemperature_.pdf'
+    else:
+        if 'before' in mystring:
+            fileout = 'dust_midplane_axitemperature_before_subl.pdf'
+        if 'after' in mystring:
+            fileout = 'dust_midplane_axitemperature_after_subl.pdf'
+        
+    plt.savefig('./'+fileout, dpi=160)
+    plt.close(fig)  # close figure as we reopen figure at every output number
+
+
     print('--------- Plotting surface temperature (x,y) for all dust size bins ----------')
 
     radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
