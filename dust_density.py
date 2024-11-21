@@ -667,6 +667,11 @@ def plot_dust_density(mystring):
     matplotlib.rc('font', family='Arial')
     fontcolor='white'
     
+    if par.half_a_disc == 'No':
+        midplane_col_index = par.gas.ncol//2-1
+    else:
+        midplane_col_index = 0
+
     # plot azimuthally-averaged dust density vs. radius and colatitude for smallest and largest bin sizes
 
     # azimuthally-averaged dust density:
@@ -678,8 +683,8 @@ def plot_dust_density(mystring):
     Z = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
 
     # midplane dust mass volume density:
-    midplane_dens_smallest = rhodustcube[par.gas.ncol//2-1,0,:,:]           # (nrad,nsec)
-    midplane_dens_largest  = rhodustcube[par.gas.ncol//2-1,par.nbin-1,:,:]  # (nrad,nsec)
+    midplane_dens_smallest = rhodustcube[midplane_col_index,0,:,:]           # (nrad,nsec)
+    midplane_dens_largest  = rhodustcube[midplane_col_index,par.nbin-1,:,:]  # (nrad,nsec)
 
     radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
     X = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
@@ -888,7 +893,11 @@ def plot_dust_to_gas_density():
 
     # define dust-to-gas density ratio
     dust_to_gas_density_ratio = total_dust_density/total_gas_density    # nsec ncol nrad
-    midplane_dust_to_gas_density_ratio = dust_to_gas_density_ratio[:,par.gas.ncol//2-1,:] # nsec nrad  
+    if par.half_a_disc == 'No':
+        midplane_col_index = par.gas.ncol//2-1
+    else:
+        midplane_col_index = 0
+    midplane_dust_to_gas_density_ratio = dust_to_gas_density_ratio[:,midplane_col_index,:] # nsec nrad  
     
     # X and Y arrays
     radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)

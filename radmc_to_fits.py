@@ -224,10 +224,25 @@ def exportfits():
         # unrealistically large. We put it to zero at the origin, as
         # it should be in our disc model! (3pix x 3pix around)
         im[im_ny//2-1:im_ny//2+1,im_nx//2-1:im_nx//2+1] = 0.0
-        if (('TestAddStar' in open('params.dat').read()) and (par.TestAddStar == 'Yes')):  # for test purpose: add the star light
-            flux_rate = 1e-1
-            star_pixel = np.sum(im)/(4*flux_rate)
-            im[im_ny//2-1:im_ny//2,im_nx//2-1:im_nx//2] = star_pixel
+        if (('AddStarInRawImage' in open('params.dat').read()) and (par.AddStarInRawImage == 'Yes')):
+            # first find out star's radius in arcseconds:
+            star_radius_in_arcseconds = par.rstar*7.0e8/1.5e11/par.distance
+            # then find pixel size in arcseconds:
+            pixel_size_in_arcseconds  = pixsize_x_deg*3600.0            
+            # infer how many pixels are spawn by central star
+            nb_pixels_spawn_by_star = round(star_radius_in_arcseconds/pixel_size_in_arcseconds)
+            # ratio of integrated fluxes between star and disc
+            star_to_disc_flux_ratio = par.star_to_disc_flux_ratio  # 0.1
+            # finally get specific intensity of star emission in each pixel (assumed uniform)
+            # np.sum(im) = disc integrated flux 
+            # star_pixel x nb_pixels_spawn_by_star x nb_pixels_spawn_by_star = star integrated flux = star_to_disc_averaged_flux_ratio x disc integrated flux 
+            star_pixel = star_to_disc_flux_ratio*np.sum(im)/(nb_pixels_spawn_by_star*nb_pixels_spawn_by_star)  # star ~ square!...
+            # change im array accordingly
+            for i in range(-nb_pixels_spawn_by_star,nb_pixels_spawn_by_star+1):
+                for j in range(-nb_pixels_spawn_by_star,nb_pixels_spawn_by_star+1):
+                    pixdist = np.sqrt(i*i + j*j)
+                    if pixdist <= nb_pixels_spawn_by_star:     # star ~ circle!...
+                        im[im_ny//2-i,im_nx//2-j] = star_pixel   
 
     # - - - - - -
     # dust polarized RT calculations

@@ -104,6 +104,7 @@ else:
 
 # Check if Fargo3D simulation was carried out in 2D or in 3D by
 # fetching NZ in the variables.par file:
+half_a_disc = 'No'
 if fargo3d == 'Yes':
     command = awk_command+' " /^NZ/ " '+dir+'/*.par'
     if sys.version_info[0] < 3:
@@ -111,8 +112,23 @@ if fargo3d == 'Yes':
     else:
         buf = subprocess.getoutput(command)
     Nz = float(buf.split()[1])
-    if Nz > 1:
+    if Nz > 1:  # 3D run
         hydro2D = 'No'
+        # Now check if FARGO3D 3D run has simulated a full disc or half a disc in the latitudinal direction
+        try:
+            domain_col = np.loadtxt(dir+"/domain_z.dat")  # latitudinal interfaces of grid cells
+        except IOError:
+            print('IOError')
+        # check if 3D simulation covers half a disk only in the latitudinal direction 
+        command = awk_command+' " /^ZMAX/ " '+dir+'/variables.par'
+        if sys.version_info[0] < 3:   # python 2.X
+            buf = subprocess.check_output(command, shell=True)
+        else:                         # python 3.X
+            buf = subprocess.getoutput(command)
+        zmax = float(buf.split()[1])
+        if np.abs(zmax - 1.57) < 0.01:             # half disk
+            half_a_disc = 'Yes'
+
 
 # Define parameters for use by RADMC-3D
 # Case where only dust transfer is calculated:

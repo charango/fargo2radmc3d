@@ -256,6 +256,11 @@ def compute_gas_mass_volume_density():
         matplotlib.rc('font', family='Arial')
         fontcolor='white'
 
+        if par.half_a_disc == 'No':
+            midplane_col_index = par.gas.ncol//2-1
+        else:
+            midplane_col_index = 0
+
         # azimuthally-averaged number density:   # nsec ncol nrad
         axidens = np.sum(rhogascube,axis=0)/par.gas.nsec  # (nol,nrad)
 
@@ -264,7 +269,7 @@ def compute_gas_mass_volume_density():
         Z = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
 
         # midplane number density:
-        midplane_dens = rhogascube[:,par.gas.ncol//2-1,:]  # (nsec,nrad)
+        midplane_dens = rhogascube[:,midplane_col_index,:]  # (nsec,nrad)
         midplane_dens = np.swapaxes(midplane_dens, 0, 1)   # (nrad,nsec)
 
         # upper plane number density:
@@ -487,6 +492,11 @@ def recompute_gas_mass_volume_density():
     matplotlib.rc('font', family='Arial')
     fontcolor='white'
 
+    if par.half_a_disc == 'No':
+        midplane_col_index = par.gas.ncol//2-1
+    else:
+        midplane_col_index = 0
+
     # azimuthally-averaged number density:   # nsec ncol nrad
     axidens = np.sum(rhogascube,axis=0)/par.gas.nsec  # (nol,nrad)
 
@@ -495,7 +505,7 @@ def recompute_gas_mass_volume_density():
     Z = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
 
     # midplane number density:
-    midplane_dens = rhogascube[:,par.gas.ncol//2-1,:]  # (nsec,nrad)
+    midplane_dens = rhogascube[:,midplane_col_index,:]  # (nsec,nrad)
     midplane_dens = np.swapaxes(midplane_dens, 0, 1)   # (nrad,nsec)
 
     # upper plane number density:

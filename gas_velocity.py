@@ -197,12 +197,17 @@ def compute_gas_velocity():
         matplotlib.rc('font', family='Arial')
         fontcolor='white'
 
+        if par.half_a_disc == 'No':
+            midplane_col_index = par.gas.ncol//2-1
+        else:
+            midplane_col_index = 0
+
         # midplane radial velocity:
-        vrmid = vrad3D[par.gas.ncol//2-1,:,:]/1e5 # nrad, nsec   # in km/s
+        vrmid = vrad3D[midplane_col_index,:,:]/1e5 # nrad, nsec   # in km/s
 
         # midplane azimuthal velocity:
-        vtmid  = vphi3D[par.gas.ncol//2-1,:,:]/1e5 # nrad, nsec   # in km/s
-        vtmid0 = vphi3D0[par.gas.ncol//2-1,:,:]/1e5 # nrad, nsec   # in km/s
+        vtmid  = vphi3D[midplane_col_index,:,:]/1e5 # nrad, nsec   # in km/s
+        vtmid0 = vphi3D0[midplane_col_index,:,:]/1e5 # nrad, nsec   # in km/s
 
         # upper vertical velocity:
         vvupper  = vtheta3D[par.gas.ncol-1,:,:]/1e5 # nrad, nsec   # in km/s
@@ -333,17 +338,17 @@ def compute_gas_velocity():
         v_los_residual = np.zeros((par.nbpixels,par.nbpixels))
         
         # midplane radial velocity:
-        vrmid = vrad3D[par.gas.ncol//2-1,:,:]/1e5 # nrad, nsec  # in km/s
+        vrmid = vrad3D[midplane_col_index,:,:]/1e5 # nrad, nsec  # in km/s
         vrmid = np.roll(vrmid,shift=int(par.gas.nsec//2),axis=1)
 
         # midplane azimuthal velocity:
-        vtmid = vphi3D[par.gas.ncol//2-1,:,:]/1e5 # nrad, nsec  # in km/s
+        vtmid = vphi3D[midplane_col_index,:,:]/1e5 # nrad, nsec  # in km/s
         vtmid = np.roll(vtmid,shift=int(par.gas.nsec//2),axis=1)
-        vtmid0 = vphi3D0[par.gas.ncol//2-1,:,:]/1e5 # nrad, nsec  # in km/s
+        vtmid0 = vphi3D0[midplane_col_index,:,:]/1e5 # nrad, nsec  # in km/s
         vtmid0 = np.roll(vtmid0,shift=int(par.gas.nsec//2),axis=1)
 
         # midplane vertical velocity:
-        vzmid = vtheta3D[par.gas.ncol//2-1,:,:]/1e5 # nrad, nsec  # in km/s
+        vzmid = vtheta3D[midplane_col_index,:,:]/1e5 # nrad, nsec  # in km/s
         vzmid = np.roll(vzmid,shift=int(par.gas.nsec//2),axis=1)
 
 

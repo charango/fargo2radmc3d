@@ -44,7 +44,12 @@ def plot_dust_temperature(mystring):
     matplotlib.rc('font', family='Arial')
     fontcolor='white'
 
-    
+    if par.half_a_disc == 'No':
+        midplane_col_index = par.gas.ncol//2-1
+    else:
+        midplane_col_index = 0
+
+
     print('--------- Plotting azimuthally-averaged temperature (R,z) for all dust size bins ----------')
 
     radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.tedge)
@@ -119,7 +124,7 @@ def plot_dust_temperature(mystring):
     # Loop over size bins:
     for l in range(par.nbin):
         strsize = str_fmt(par.bins[l])+' m'
-        ax.plot(par.gas.rmed*par.gas.culength/1.5e11,axitemp[l,par.gas.ncol//2-1,:],label=strsize,color=par.c20[l])   # R in au
+        ax.plot(par.gas.rmed*par.gas.culength/1.5e11,axitemp[l,midplane_col_index,:],label=strsize,color=par.c20[l])   # R in au
     ax.legend(frameon=False,fontsize=15,loc='upper right')
 
     if par.dustsublimation == 'No':
@@ -141,7 +146,7 @@ def plot_dust_temperature(mystring):
     Y = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
 
     surftemp = Temp[:,:,par.gas.ncol-1,:]  # nbin nsec nrad
-    midtemp  = Temp[:,:,par.gas.ncol//2-1,:]  # nbin nsec nrad
+    midtemp  = Temp[:,:,midplane_col_index,:]  # nbin nsec nrad
 
     mynorm = matplotlib.colors.Normalize(vmin=midtemp.min(),vmax=midtemp.max())
     
