@@ -114,11 +114,6 @@ if fargo3d == 'Yes':
     Nz = float(buf.split()[1])
     if Nz > 1:  # 3D run
         hydro2D = 'No'
-        # Now check if FARGO3D 3D run has simulated a full disc or half a disc in the latitudinal direction
-        try:
-            domain_col = np.loadtxt(dir+"/domain_z.dat")  # latitudinal interfaces of grid cells
-        except IOError:
-            print('IOError')
         # check if 3D simulation covers half a disk only in the latitudinal direction 
         command = awk_command+' " /^ZMAX/ " '+dir+'/variables.par'
         if sys.version_info[0] < 3:   # python 2.X
