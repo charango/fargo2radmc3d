@@ -259,7 +259,7 @@ def compute_gas_mass_volume_density():
         if par.half_a_disc == 'No':
             midplane_col_index = par.gas.ncol//2-1
         else:
-            midplane_col_index = 0
+            midplane_col_index = par.gas.ncol-1
 
         # azimuthally-averaged number density:   # nsec ncol nrad
         axidens = np.sum(rhogascube,axis=0)/par.gas.nsec  # (nol,nrad)
@@ -495,7 +495,7 @@ def recompute_gas_mass_volume_density():
     if par.half_a_disc == 'No':
         midplane_col_index = par.gas.ncol//2-1
     else:
-        midplane_col_index = 0
+        midplane_col_index = par.gas.ncol-1
 
     # azimuthally-averaged number density:   # nsec ncol nrad
     axidens = np.sum(rhogascube,axis=0)/par.gas.nsec  # (nol,nrad)

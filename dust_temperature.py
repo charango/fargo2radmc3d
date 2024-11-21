@@ -47,7 +47,7 @@ def plot_dust_temperature(mystring):
     if par.half_a_disc == 'No':
         midplane_col_index = par.gas.ncol//2-1
     else:
-        midplane_col_index = 0
+        midplane_col_index = par.gas.ncol-1
 
 
     print('--------- Plotting azimuthally-averaged temperature (R,z) for all dust size bins ----------')

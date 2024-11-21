@@ -670,7 +670,7 @@ def plot_dust_density(mystring):
     if par.half_a_disc == 'No':
         midplane_col_index = par.gas.ncol//2-1
     else:
-        midplane_col_index = 0
+        midplane_col_index = par.gas.ncol-1
 
     # plot azimuthally-averaged dust density vs. radius and colatitude for smallest and largest bin sizes
 
@@ -896,7 +896,7 @@ def plot_dust_to_gas_density():
     if par.half_a_disc == 'No':
         midplane_col_index = par.gas.ncol//2-1
     else:
-        midplane_col_index = 0
+        midplane_col_index = par.gas.ncol-1
     midplane_dust_to_gas_density_ratio = dust_to_gas_density_ratio[:,midplane_col_index,:] # nsec nrad  
     
     # X and Y arrays

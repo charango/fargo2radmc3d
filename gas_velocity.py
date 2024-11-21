@@ -200,7 +200,7 @@ def compute_gas_velocity():
         if par.half_a_disc == 'No':
             midplane_col_index = par.gas.ncol//2-1
         else:
-            midplane_col_index = 0
+            midplane_col_index = par.gas.ncol-1
 
         # midplane radial velocity:
         vrmid = vrad3D[midplane_col_index,:,:]/1e5 # nrad, nsec   # in km/s
