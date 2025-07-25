@@ -403,12 +403,14 @@ def produce_final_image(input=''):
         ax.set_xlabel('RA offset [mas]')
         ax.set_ylabel('Dec offset [mas]')
         strylabel_polar = 'Radius [mas]'
+        axes_in_mas = True
     else:
         ax.set_xlabel('RA offset [arcsec]')
         ax.set_ylabel('Dec offset [arcsec]')
         strylabel_polar = 'Radius [arcsec]'
         bmaj = par.bmaj
         bmin = par.bmin
+        axes_in_mas = False
         
     mina = da
     maxa = -da
@@ -545,6 +547,9 @@ def produce_final_image(input=''):
             xp_sky =  (xp*np.cos(phiangle_in_rad)+yp*np.sin(phiangle_in_rad))*np.cos(posangle_in_rad) + (-xp*np.sin(phiangle_in_rad)+yp*np.cos(phiangle_in_rad))*np.cos(inclination_in_rad)*np.sin(posangle_in_rad)
             yp_sky = -(xp*np.cos(phiangle_in_rad)+yp*np.sin(phiangle_in_rad))*np.sin(posangle_in_rad) + (-xp*np.sin(phiangle_in_rad)+yp*np.cos(phiangle_in_rad))*np.cos(inclination_in_rad)*np.cos(posangle_in_rad)
             print('planet position on sky-plane [arcseconds]: xp_sky = ', xp_sky, ' and yp_sky = ', yp_sky)
+            if axes_in_mas == True:
+                xp_sky *= 1e3
+                yp_sky *= 1e3
             ax.plot(xp_sky,yp_sky,'x',color='white',markersize=10)
     
     # Add + sign at the origin
