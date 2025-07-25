@@ -18,6 +18,7 @@ RTdust_or_gas	both		# radiative transfer in the dust, the gas or both? (type 'du
 
 Tdust_eq_Thydro	No			# do we take the hydro gas temperature for the dust temperature? (if No, mctherm is run)
 Tdust_eq_Tgas	Yes			# if No, are the gas and dust temperatures taken equal? 
+use_gas_density	No			# if Yes, we directly use the gas density to infer the dust density
 recalc_radmc	Yes			# do we run radmc3D (thermal Monte-Carlo + ray tracing)?
 recalc_rawfits	No			# if radmc3d run elsewhere, do we compute fits file for raw flux?
 recalc_fluxmap	No			# do we compute convolved flux maps from raw flux maps?
@@ -66,7 +67,7 @@ star_to_disc_flux_ratio	0.09  # if so, enter the total star-to-disc flux ratio a
 
 
 ### Dust size distribution
-dustfluids      No			# if !No, range of indices of dust fluids for FARGO3D multifluid simulations
+dustfluids      No			# if !No, enter min,max with the min and max indices of dust fluids for FARGO3D multifluid simulations as specified in setup's .opt parameter file (eg. 2,4)
 amin			1e-5    	# minimum particle size in meters
 amax			1e-2		# maximum particle size in meters
 pindex			3.0			# minus power law exponent of dust size distribution

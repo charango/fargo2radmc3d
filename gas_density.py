@@ -311,6 +311,8 @@ def compute_gas_mass_volume_density():
         ax.set_ylim(Z.min(),Z.max())
         ax.set_xlim(R.min(),R.max())
 
+        #axidens /= axidens.max()  # cuidadin!!
+
         mynorm = matplotlib.colors.LogNorm(vmin=axidens.min(),vmax=axidens.max())
         CF = ax.pcolormesh(R,Z,axidens,cmap='nipy_spectral',norm=mynorm)
 

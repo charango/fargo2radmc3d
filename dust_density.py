@@ -61,7 +61,7 @@ def compute_dust_mass_surface_density():
     # emission is computed. For polarized scattered light prediction from Dusty
     # FARGO-ADSG simulation we will simply use the gas surface density as input
     # -  -  -  -  -  -  -  -  -  -  -  -  -  - 
-    if (par.fargo3d == 'No' and par.polarized_scat == 'No'):
+    if (par.fargo3d == 'No' and par.polarized_scat == 'No' and par.use_gas_density == 'No'):
         
         # read information on the dust particles
         (rad, azi, vr, vt, Stokes, a) = np.loadtxt(par.dir+'/dustsystat'+str(par.on)+'.dat', unpack=True)
@@ -326,7 +326,7 @@ def compute_dust_mass_surface_density():
     # simulations, but can also be used for FARGO3D simulations carried out in
     # 2D for which dust fluids were included.
     # -  -  -  -  -  -  -  -  -  -  -  -  -  - 
-    if ( (par.fargo3d == 'No' and par.polarized_scat == 'Yes') or (par.fargo3d == 'Yes' and par.dustfluids == 'No') ):
+    if ( (par.fargo3d == 'No' and par.polarized_scat == 'Yes') or (par.fargo3d == 'Yes' and par.dustfluids == 'No') or (par.fargo3d == 'No' and par.polarized_scat == 'No' and par.use_gas_density == 'Yes') ):
 
         dustcube = dust.reshape(par.nbin, par.gas.nsec, par.gas.nrad)  
         dustcube = np.swapaxes(dustcube,1,2)  # means nbin, nrad, nsec
@@ -416,7 +416,7 @@ def compute_dust_mass_volume_density():
             
             # read dust mass volume density for each dust fluid in code units
             dustcube[ibin,:,:,:] = Field(field=fileread, directory=par.dir).data
-        
+
             # conversion in g/cm^3
             dustcube[ibin,:,:,:] *= (par.gas.cumass*1e3)/((par.gas.culength*1e2)**3.)  # dimensions: nbin, ncol, nrad, nsec
 

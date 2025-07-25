@@ -272,6 +272,8 @@ def produce_final_image(input=''):
     hdu.header['BTYPE'] = 'FLUX DENSITY'
     hdu.header['BSCALE'] = 1
     hdu.header['BZERO'] = 0
+    hdu.header['BMAJ'] = par.bmaj
+    hdu.header['BMIN'] = par.bmin
     del hdu.header['EXTEND']
     hdu.data = convolved_intensity
     inbasename = os.path.basename('./'+outfile)
@@ -449,8 +451,6 @@ def produce_final_image(input=''):
     else:
         mynorm = matplotlib.colors.Normalize(vmin=min,vmax=max)
 
-    print(min,convolved_intensity.min())
-    print(max,convolved_intensity.max())
     # imshow does a bilinear interpolation. You can switch it off by putting
     # interpolation='none'
     CM = ax.imshow(convolved_intensity, origin='lower', cmap=par.mycolormap, interpolation='bilinear', extent=[a0,a1,d0,d1], norm=mynorm, aspect='auto')
@@ -911,6 +911,7 @@ def produce_final_image(input=''):
             plt.clf()
 
 
+            '''
             # plot the 0-order momentum minus the mean intensity at each orbit
 
             # substract the mean intensity at each pixel
@@ -1021,6 +1022,7 @@ def produce_final_image(input=''):
             plt.savefig('./'+"moment_0_minus_mean_intensity.pdf", dpi=160)
             plt.clf()
 
+        '''
 
         os.system('rm -rf deproj_polar_dir')
         os.chdir(currentdir)
