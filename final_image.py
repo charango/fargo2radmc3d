@@ -499,16 +499,34 @@ def produce_final_image(input=''):
 
             # NEW (March 2024): case there is more than just one planet!
             if os.path.isfile(par.dir+"/planet1.dat") == True:
-                print('Two planets to be displayed..')
                 if fargo3d == 'Yes':
                     f1, xpla, ypla, f4, f5, f6, f7, f8, date, omega = np.loadtxt(par.dir+"/planet1.dat",unpack=True)
                 else:
                     f1, xpla, ypla, f4, f5, f6, f7, date, omega, f10, f11 = np.loadtxt(par.dir+"/planet1.dat",unpack=True)
                 xp = np.array([xp,xpla[par.on]])
                 yp = np.array([yp,ypla[par.on]])
-                print('xp = ', xp)
-                print('yp = ', yp)
-                
+                if os.path.isfile(par.dir+"/planet2.dat") == True:
+                    if fargo3d == 'Yes':
+                        f1, xpla, ypla, f4, f5, f6, f7, f8, date, omega = np.loadtxt(par.dir+"/planet2.dat",unpack=True)
+                    else:
+                        f1, xpla, ypla, f4, f5, f6, f7, date, omega, f10, f11 = np.loadtxt(par.dir+"/planet2.dat",unpack=True)
+                    xp = np.array([xp,xpla[par.on]])
+                    yp = np.array([yp,ypla[par.on]])
+                    if os.path.isfile(par.dir+"/planet3.dat") == True:
+                        if fargo3d == 'Yes':
+                            f1, xpla, ypla, f4, f5, f6, f7, f8, date, omega = np.loadtxt(par.dir+"/planet3.dat",unpack=True)
+                        else:
+                            f1, xpla, ypla, f4, f5, f6, f7, date, omega, f10, f11 = np.loadtxt(par.dir+"/planet3.dat",unpack=True)
+                        xp = np.array([xp,xpla[par.on]])
+                        yp = np.array([yp,ypla[par.on]])
+                        if os.path.isfile(par.dir+"/planet4.dat") == True:
+                            if fargo3d == 'Yes':
+                                f1, xpla, ypla, f4, f5, f6, f7, f8, date, omega = np.loadtxt(par.dir+"/planet4.dat",unpack=True)
+                            else:
+                                f1, xpla, ypla, f4, f5, f6, f7, date, omega, f10, f11 = np.loadtxt(par.dir+"/planet4.dat",unpack=True)
+                            xp = np.array([xp,xpla[par.on]])
+                            yp = np.array([yp,ypla[par.on]])
+
             if par.xaxisflip == 'Yes':
                 xp = -xp
             else:
