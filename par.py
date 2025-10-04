@@ -248,9 +248,9 @@ if fargo3d == 'Yes' and (RTdust_or_gas == 'dust' or RTdust_or_gas == 'both'):
         pindex = -float(buf.split()[1])
         '''
     else:
-        bins = np.logspace(np.log10(amin), np.log10(amax), nbin+1) 
+        bins = np.logspace(np.log10(amin), np.log10(amax), nbin) 
 else:
-    bins = np.logspace(np.log10(amin), np.log10(amax), nbin+1) 
+    bins = np.logspace(np.log10(amin), np.log10(amax), nbin) 
         
 # label for the name of the image file created by RADMC3D
 if RTdust_or_gas == 'dust':
