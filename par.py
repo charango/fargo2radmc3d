@@ -89,8 +89,8 @@ fargo3d = 'No'
 if os.path.isfile(dir+'/variables.par') == True:
     fargo3d = 'Yes'
 
-if fargo3d == 'No':
-    dustfluids = 'No'
+# if fargo3d == 'No':
+#     dustfluids = 'No'
     
 # Check whether awk or gawk are installed!
 if which('gawk') is not None:
