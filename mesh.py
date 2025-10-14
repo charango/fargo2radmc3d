@@ -53,7 +53,7 @@ class Mesh():
         # -----
         # colatitude
         # -----
-        if par.fargo3d == 'Yes' and par.hydro2D == 'No':  # 3D simulation with fargo3d
+        if par.fargo3d == 'Yes' and par.hydro2D == 'No' and par.periodicz == 0:  # 3D simulation with fargo3d
             try:
                 domain_col = np.loadtxt(directory+"domain_z.dat")  # latitudinal interfaces of grid cells
             except IOError:

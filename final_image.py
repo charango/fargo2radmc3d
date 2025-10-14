@@ -1441,7 +1441,7 @@ def produce_final_image(input=''):
                         xp = -xp
                     else:
                         xp = -xp  # cuidadin
-                        yp = -yp  # cuidadin
+                        yp = yp  # cuidadin
                     print('planet position on simulation plane [code units]: xp = ', xp, ' and yp = ', yp)
                     
                     # convert from simulation units to arcsecond:

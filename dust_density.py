@@ -61,7 +61,7 @@ def compute_dust_mass_surface_density():
     # emission is computed. For polarized scattered light prediction from Dusty
     # FARGO-ADSG simulation we will simply use the gas surface density as input
     # -  -  -  -  -  -  -  -  -  -  -  -  -  - 
-    if (par.fargo3d == 'No' and par.polarized_scat == 'No' and par.use_gas_density == 'No'):
+    if (par.fargo3d == 'No' and par.polarized_scat == 'No' and par.dustfluids == 'No'):
         
         # read information on the dust particles
         (rad, azi, vr, vt, Stokes, a) = np.loadtxt(par.dir+'/dustsystat'+str(par.on)+'.dat', unpack=True)
@@ -319,6 +319,61 @@ def compute_dust_mass_surface_density():
         if par.verbose == 'Yes':
             print('Maximum dust surface density [in g/cm^2] is ', dust_surface_density.max())
 
+    # -  -  -  -  -  -  -  -  -  -  -  -  -  -
+    # CASE 2b: case of a Dusty FARGO-ADSG simulation 
+    # with dust modelled as a single-sized fluid
+    # -  -  -  -  -  -  -  -  -  -  -  -  -  - 
+    if (par.fargo3d == 'No' and par.dustfluids != 'No'):
+
+        dustcube = dust.reshape(par.nbin, par.gas.nsec, par.gas.nrad)  
+        dustcube = np.swapaxes(dustcube,1,2)  # means nbin, nrad, nsec
+        del dust
+
+        # ------------------
+        # dust surface density in each size bin directly from the simulation
+        # outputs
+        # ------------------
+        for ibin in range(par.nbin):
+
+            fileread = 'dustdens'+str(par.on)+'.dat'
+            
+            # read dust surface density for each dust fluid in code units
+            dustcube[ibin,:,:]  = Field(field=fileread, directory=par.dir).data
+        
+            # conversion in g/cm^2
+            dustcube[ibin,:,:] *= (par.gas.cumass*1e3)/((par.gas.culength*1e2)**2.)  # dimensions: nbin, nrad, nsec
+            
+            # decrease dust surface density inside mask radius
+            # NB: mask_radius is in arcseconds
+            rmask_in_code_units = par.mask_radius*par.distance*par.au/par.gas.culength/1e2
+            for i in range(par.gas.nrad):
+                if (par.gas.rmed[i] < rmask_in_code_units):
+                    dustcube[ibin,i,:] = 0.0 # *= ( (par.gas.rmed[i]/rmask_in_code_units)**(10.0) ) 
+
+            # case we introduce 'by hand' a cavity in the dust (Baruteau et al. 2021)
+            if ('cavity_pol_int' in open('params.dat').read()) and (par.cavity_pol_int == 'Yes'):
+                agraincm = 1e2*par.dust_size[par.dustfluids[0]-1+ibin]
+                rhopart  = 2.7  # g/cm^3 (small grains)
+                mymin = dustcube[ibin,:,:].min()
+                for i in range(par.gas.nrad):
+                    for j in range(par.gas.nsec):
+                        # local Stokes number at R,phi
+                        st = 0.5*np.pi*agraincm*rhopart/(par.gas.data[i,j]*par.gas.cumass*1e3/(par.gas.culength*1e2)**2.)
+                        if st > 1e-4:  # 1e-4 or 1e-3 looks like a good threshold
+                            dustcube[ibin,i,j] = mymin
+                    
+                    
+        if par.verbose == 'Yes':
+            print('Total dust mass [g] = ', np.sum(dustcube[:,:,:]*surface*(par.gas.culength*1e2)**2.))
+            print('Total dust mass [Mgas] = ', np.sum(dustcube[:,:,:]*surface*(par.gas.culength*1e2)**2.)/(Mgas*par.gas.cumass*1e3))
+            print('Total dust mass [Mstar] = ', np.sum(dustcube[:,:,:]*surface*(par.gas.culength*1e2)**2.)/(par.gas.cumass*1e3))
+    
+        # Total dust surface density
+        dust_surface_density = np.sum(dustcube,axis=0)
+        if par.verbose == 'Yes':
+            print('Maximum dust surface density [in g/cm^2] is ', dust_surface_density.max())
+
+
 
     # -  -  -  -  -  -  -  -  -  -  -  -  -  -
     # CASE 3: case where for polarized intensity maps we use the gas surface
@@ -326,7 +381,7 @@ def compute_dust_mass_surface_density():
     # simulations, but can also be used for FARGO3D simulations carried out in
     # 2D for which dust fluids were included.
     # -  -  -  -  -  -  -  -  -  -  -  -  -  - 
-    if ( (par.fargo3d == 'No' and par.polarized_scat == 'Yes') or (par.fargo3d == 'Yes' and par.dustfluids == 'No') or (par.fargo3d == 'No' and par.polarized_scat == 'No' and par.use_gas_density == 'Yes') ):
+    if ( (par.fargo3d == 'No' and par.polarized_scat == 'Yes') or (par.fargo3d == 'Yes' and par.dustfluids == 'No') or (par.fargo3d == 'No' and par.polarized_scat == 'No' and ('use_gas_density' in open('params.dat').read()) and par.use_gas_density == 'Yes') ):
 
         dustcube = dust.reshape(par.nbin, par.gas.nsec, par.gas.nrad)  
         dustcube = np.swapaxes(dustcube,1,2)  # means nbin, nrad, nsec
@@ -384,7 +439,7 @@ def compute_dust_mass_surface_density():
         # Total dust surface density
         dust_surface_density = np.sum(dustcube,axis=0)
         if par.verbose == 'Yes':
-            print('Maximum dust surface density [in g/cm^2] is ', dust_surface_density.max())
+            print('Maximum total dust surface density [in g/cm^2] is ', dust_surface_density.max())
 
     # finally return dustcube
     return dustcube
@@ -494,7 +549,7 @@ def compute_dust_mass_volume_density():
                     mysize = par.bins[ibin]
                 Stokes_fargo3d[ibin,:] = 0.5*np.pi*(mysize*1e2)*par.dust_internal_density/axirhogas  # since dust size is in meters...
                 #print('max Stokes number = ', Stokes_fargo3d[ibin,:].max())
-                
+
         # For the vertical expansion of the dust mass volume density, we
         # need to define a 2D array for the dust's aspect ratio:
         for ibin in range(par.nbin):

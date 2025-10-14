@@ -401,12 +401,29 @@ if fargo3d == 'No':
         buf = subprocess.getoutput(command)
     radialspacing = str(buf.split()[1])
 
+
+periodicz = 0
+if fargo3d == 'Yes':
+    # check if periodicz keyword shows up, in which case treat simulation 
+    # as if it was 2D (no vertical stratification!)
+    command = awk_command+' " /^PERIODICZ/ " '+dir+'/variables.par'
+    if sys.version_info[0] < 3:   # python 2.X
+        buf = subprocess.check_output(command, shell=True)
+    else:                         # python 3.X
+        buf = subprocess.getoutput(command)
+    periodicz = float(buf.split()[1])
+
 # Get gas surface density field from hydro simulation, with
 # the aim to inherit from the parameters attached to the mesh
 # structure (rmed, Nrad etc.)
 from field import *
 from mesh import *
 gas = Field(field='gasdens'+str(on)+'.dat', directory=dir)
+
+if periodicz == 1:
+    hydro2D = 'Yes'
+    gas.data = gas.data[0,:,:]
+    print(gas.data.shape)
 
 '''
 if (minmaxaxis == '#'):
