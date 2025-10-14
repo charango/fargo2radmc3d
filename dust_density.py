@@ -340,6 +340,9 @@ def compute_dust_mass_surface_density():
             # read dust surface density for each dust fluid in code units
             dustcube[ibin,:,:]  = Field(field=fileread, directory=par.dir).data
         
+            if ('rescale_dust_fluid_density' in open('params.dat').read()) and (par.rescale_dust_fluid_density != 'No'):
+                dustcube *= par.rescale_dust_fluid_density # assumes parameter is a real in params.dat...
+
             # conversion in g/cm^2
             dustcube[ibin,:,:] *= (par.gas.cumass*1e3)/((par.gas.culength*1e2)**2.)  # dimensions: nbin, nrad, nsec
             
