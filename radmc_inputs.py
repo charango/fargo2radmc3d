@@ -226,7 +226,7 @@ def write_lines(specie,lines_mode):
         if par.verbose == 'Yes':
             print('--------- Downloading molecular data file ----------')
             
-        command = 'curl -O https://home.strw.leidenuniv.nl/~moldata/datafiles/'+dat_file
+        command = 'curl -k -O https://home.strw.leidenuniv.nl/~moldata/datafiles/'+dat_file
         print(command)
         os.system(command)
         command = 'mv '+datafile+'.dat molecule_'+str(par.gasspecies)+'.inp'
