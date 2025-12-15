@@ -130,12 +130,50 @@ def write_stars(Rstar = 1, Tstar = 6000):
     path = 'stars.inp'
     wave = open(path,'w')
 
-    wave.write('\t 2\n') 
-    wave.write('1 \t'+str(Nw)+'\n')
-    wave.write(str(Rstar*par.R_Sun)+'\t'+str(par.M_Sun)+'\t 0 \t 0 \t 0 \n')
+    wave.write('\t 2\n')
+    if par.central_binary == 'No':
+        wave.write('1 \t'+str(Nw)+'\n')
+        wave.write(str(Rstar*par.R_Sun)+'\t'+str(par.M_Sun)+'\t 0 \t 0 \t 0 \n')
+    else:
+        if par.fargo3d == 'Yes':
+            import sys, subprocess
+
+            command = par.awk_command+' " /^UNITOFLENGTHAU/ " '+par.dir+'/variables.par'
+            # check which version of python we're using
+            if sys.version_info[0] < 3:   # python 2.X
+                buf = subprocess.check_output(command, shell=True)
+            else:                         # python 3.X
+                buf = subprocess.getoutput(command)
+            culength_cm = float(buf.split()[1])*1.5e13  # from au to centimeters
+
+            command = par.awk_command+' " /^UNITOFMASSMSUN/ " '+par.dir+'/variables.par'
+            # check which version of python we're using
+            if sys.version_info[0] < 3:   # python 2.X
+                buf = subprocess.check_output(command, shell=True)
+            else:                         # python 3.X
+                buf = subprocess.getoutput(command)
+            cumass_Msun = float(buf.split()[1])   # in solar masses
+
+            # read planet0 and planet1.dat files which contain stars coordinates and mass
+            f1, x_primary, y_primary, z_primary, f5, f6, f7, mass_primary, date, omega = np.loadtxt(par.dir+"/planet0.dat",unpack=True)
+            f1, x_secondary, y_secondary, z_secondary, f5, f6, f7, mass_secondary, date, omega = np.loadtxt(par.dir+"/planet1.dat",unpack=True)
+
+            # assume star radius proportionnel to M^1/3: R/Rsun = (M/Msun)^(1/3)
+            r_primary   = (mass_primary/cumass_Msun)**(1./3)  # in solar radii
+            r_secondary = (mass_secondary/cumass_Msun)**(1./3)  # in solar radii
+
+            # finally write stars.inp with both stars
+            wave.write('2 \t'+str(Nw)+'\n')
+            # radius (cm), mass (g), x (cm), y (cm), z (cm)
+            wave.write(str(r_primary[par.on]*par.R_Sun)+'\t'+str(mass_primary[par.on]*par.M_Sun/cumass_Msun)+'\t'+str(x_primary[par.on]*culength_cm)+'\t'+str(y_primary[par.on]*culength_cm)+'\t'+str(z_primary[par.on]*culength_cm)+'\n')
+            wave.write(str(r_secondary[par.on]*par.R_Sun)+'\t'+str(mass_secondary[par.on]*par.M_Sun/cumass_Msun)+'\t'+str(x_secondary[par.on]*culength_cm)+'\t'+str(y_secondary[par.on]*culength_cm)+'\t'+str(z_secondary[par.on]*culength_cm)+'\n')
+
+
     for i in range(Nw):
         wave.write('\t'+str(waves[i])+'\n')
     wave.write('\t -'+str(Tstar)+'\n')
+    if par.central_binary == 'Yes':
+        wave.write('\t -'+str(Tstar)+'\n')
     wave.close()
 
 

@@ -78,23 +78,45 @@ def compute_hydro_temperature():
         gas_temp     = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))
         gas_temp_cyl = np.zeros((par.gas.nver,par.gas.nrad,par.gas.nsec))
 
-        # Test if energy equation was used or not. For that, we just
-        # need to check if a file TemperatureXX.dat was written in
-        # Fargo run's directory:
-        # Cuidadin: won't apply to FARGO-3D runs!
-        input_file = par.dir+'/Temperature'+str(par.on)+'.dat'
-
-        if os.path.isfile(input_file) == False:
-            thydro = par.aspectratio*par.aspectratio*par.gas.cutemp*par.gas.rmed**(-1.0+2.0*par.flaringindex)
-            for k in range(par.gas.nsec):
+        # Check if energy equation was used or not:
+        # 1) non-FARGO3D case
+        if par.fargo3d == 'No':
+            input_file = par.dir+'/Temperature'+str(par.on)+'.dat'
+            if (os.path.isfile(input_file) == False):
+                # case non-existing gas Temperature file:
+                thydro = par.aspectratio*par.aspectratio*par.gas.cutemp*par.gas.rmed**(-1.0+2.0*par.flaringindex)
+                for k in range(par.gas.nsec):
+                    for j in range(par.gas.nver):
+                        gas_temp_cyl[j,:,k] = thydro  # only function of R (cylindrical radius)
+            else:
+                # case existing gas Temperature file:
+                thydro = Field(field='Temperature'+str(par.on)+'.dat', directory=par.dir).data  # in code units
+                thydro *= par.gas.cutemp  # (nrad,nsec) in K
                 for j in range(par.gas.nver):
-                    gas_temp_cyl[j,:,k] = thydro  # only function of R (cylindrical radius)
-        # case existing gas Temperature file:
+                    gas_temp_cyl[j,:,:] = thydro    # function of R and phi
+        # 2) FARGO3D case
         else:
-            thydro = Field(field='Temperature'+str(par.on)+'.dat', directory=par.dir).data  # in code units
-            thydro *= par.gas.cutemp  # (nrad,nsec) in K
-            for j in range(par.gas.nver):
-                gas_temp_cyl[j,:,:] = thydro    # function of R and phi
+            if "ISOTHERMAL" in open(par.dir+'/summary'+str(par.on)+'.dat',"r").read():
+                # case run was isothermal
+                thydro = par.aspectratio*par.aspectratio*par.gas.cutemp*par.gas.rmed**(-1.0+2.0*par.flaringindex)
+                for k in range(par.gas.nsec):
+                    for j in range(par.gas.nver):
+                        gas_temp_cyl[j,:,k] = thydro  # only function of R (cylindrical radius)
+            else:
+                # case run used energy equation
+                e = Field(field='gasenergy'+str(par.on)+'.dat', directory=par.dir).data    # in code units; gasenergyX.dat contains the thermal energy per unit volume
+                rho = Field(field='gasdens'+str(par.on)+'.dat', directory=par.dir).data
+                command = par.awk_command+' " /^GAMMA/ " '+par.dir+'/*.par'
+                if sys.version_info[0] < 3:
+                    buf = subprocess.check_output(command, shell=True)
+                else:
+                    buf = subprocess.getoutput(command)
+                gamma = float(buf.split()[1])    
+                thydro = (gamma-1.0)*e/rho
+                thydro *= par.gas.cutemp    # (nrad,nsec) in K
+                for j in range(par.gas.nver):
+                    gas_temp_cyl[j,:,:] = thydro    # function of R and phi
+
 
         # Now, sweep through the spherical grid
         for j in range(par.gas.ncol):

@@ -435,3 +435,7 @@ if not('mycolormap' in open('params.dat').read()):
     mycolormap = 'nipy_spectral'
 if ((RTdust_or_gas == 'gas' or RTdust_or_gas == 'both') and moment_order == 1):
     mycolormap = 'RdBu_r'
+
+# NEW (dec 2025): case where central object is a binary star
+if not('central_binary' in open('params.dat').read()):
+    central_binary = 'No'

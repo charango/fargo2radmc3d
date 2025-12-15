@@ -139,15 +139,13 @@ def plot_dust_temperature(mystring):
     plt.close(fig)  # close figure as we reopen figure at every output number
 
 
-    print('--------- Plotting surface temperature (x,y) for all dust size bins ----------')
+    print('--------- Plotting midplane temperature (x,y) for all dust size bins ----------')
 
     radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
     X = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
     Y = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
 
-    surftemp = Temp[:,:,par.gas.ncol-1,:]  # nbin nsec nrad
     midtemp  = Temp[:,:,midplane_col_index,:]  # nbin nsec nrad
-
     mynorm = matplotlib.colors.Normalize(vmin=midtemp.min(),vmax=midtemp.max())
     
     # Loop over size bins:
@@ -192,6 +190,61 @@ def plot_dust_temperature(mystring):
                 fileout = 'dustmidplane_temperature_'+str(l).zfill(2)+'_before_subl.pdf'
             if 'after' in mystring:
                 fileout = 'dustmidplane_temperature_'+str(l).zfill(2)+'_after_subl.pdf'
+        
+        plt.savefig('./'+fileout, dpi=160)
+        plt.close(fig)  # close figure as we reopen figure at every output number
+
+    print('--------- Plotting surface temperature (x,y) for all dust size bins ----------')
+
+    radius_matrix, theta_matrix = np.meshgrid(par.gas.redge,par.gas.pedge)
+    X = radius_matrix * np.sin(theta_matrix) *par.gas.culength/1.5e11 # in au
+    Y = radius_matrix * np.cos(theta_matrix) *par.gas.culength/1.5e11 # in au
+
+    surftemp = Temp[:,:,par.gas.ncol-1,:]  # nbin nsec nrad
+    mynorm = matplotlib.colors.Normalize(vmin=surftemp.min(),vmax=surftemp.max())
+    
+    # Loop over size bins:
+    for l in range(par.nbin):
+
+        fig = plt.figure(figsize=(8.,8.))
+        plt.subplots_adjust(left=0.17, right=0.92, top=0.88, bottom=0.1)
+        ax = plt.gca()
+        ax.tick_params(top='on', right='on', length = 5, width=1.0, direction='out')
+        ax.tick_params(axis='x', which='minor', top=True)
+        ax.tick_params(axis='y', which='minor', right=True)
+        
+        ax.set_xlabel('x [au]')
+        ax.set_ylabel('y [au]')
+        ax.set_ylim(Y.min(),Y.max())
+        ax.set_xlim(X.min(),X.max())
+               
+        CF = ax.pcolormesh(X,Y,surftemp[l,:,:],cmap='nipy_spectral',norm=mynorm,rasterized=True)
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("top", size="2.5%", pad=0.12)
+        cb =  plt.colorbar(CF, cax=cax, orientation='horizontal')
+        cax.xaxis.tick_top()
+        cax.xaxis.set_tick_params(labelsize=20, direction='out')
+
+        # title on top
+        cax.xaxis.set_label_position('top')
+        cax.set_xlabel('dust surface temperature '+r'[K]')
+        cax.xaxis.labelpad = 8
+
+        # show dust size in bottom-left corner:
+        #strsize = 's='+'{:0.2e}'.format(par.bins[l])+'m' # round to 2 decimals
+        strsize = str_fmt(par.bins[l])+' m'
+        xstr = 0.98*X.min() 
+        ystr = 0.98*Y.max() 
+        ax.text(xstr,ystr,strsize, fontsize=20, color = 'black',weight='bold',horizontalalignment='left', verticalalignment='top')
+
+        if par.dustsublimation == 'No':
+            fileout = 'dustsurface_temperature_'+str(l).zfill(2)+'.pdf'
+        else:
+            if 'before' in mystring:
+                fileout = 'dustsurface_temperature_'+str(l).zfill(2)+'_before_subl.pdf'
+            if 'after' in mystring:
+                fileout = 'dustsurface_temperature_'+str(l).zfill(2)+'_after_subl.pdf'
         
         plt.savefig('./'+fileout, dpi=160)
         plt.close(fig)  # close figure as we reopen figure at every output number
