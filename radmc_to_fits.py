@@ -223,26 +223,60 @@ def exportfits():
         # sometimes the intensity has a value at the origin that is
         # unrealistically large. We put it to zero at the origin, as
         # it should be in our disc model! (3pix x 3pix around)
-        im[im_ny//2-1:im_ny//2+1,im_nx//2-1:im_nx//2+1] = 0.0
+        if par.central_binary != 'No':
+            im[im_ny//2-1:im_ny//2+1,im_nx//2-1:im_nx//2+1] = 0.0
         if (('AddStarInRawImage' in open('params.dat').read()) and (par.AddStarInRawImage == 'Yes')):
-            # first find out star's radius in arcseconds:
-            star_radius_in_arcseconds = par.rstar*7.0e8/1.5e11/par.distance
-            # then find pixel size in arcseconds:
-            pixel_size_in_arcseconds  = pixsize_x_deg*3600.0            
-            # infer how many pixels are spawn by central star
-            nb_pixels_spawn_by_star = round(star_radius_in_arcseconds/pixel_size_in_arcseconds)
-            # ratio of integrated fluxes between star and disc
-            star_to_disc_flux_ratio = par.star_to_disc_flux_ratio  # 0.1
-            # finally get specific intensity of star emission in each pixel (assumed uniform)
-            # np.sum(im) = disc integrated flux 
-            # star_pixel x nb_pixels_spawn_by_star x nb_pixels_spawn_by_star = star integrated flux = star_to_disc_averaged_flux_ratio x disc integrated flux 
-            star_pixel = star_to_disc_flux_ratio*np.sum(im)/(nb_pixels_spawn_by_star*nb_pixels_spawn_by_star)  # star ~ square!...
-            # change im array accordingly
-            for i in range(-nb_pixels_spawn_by_star,nb_pixels_spawn_by_star+1):
-                for j in range(-nb_pixels_spawn_by_star,nb_pixels_spawn_by_star+1):
-                    pixdist = np.sqrt(i*i + j*j)
-                    if pixdist <= nb_pixels_spawn_by_star:     # star ~ circle!...
-                        im[im_ny//2-i,im_nx//2-j] = star_pixel   
+            if par.central_binary == 'No':        
+                # first find out star's radius in arcseconds:
+                star_radius_in_arcseconds = par.rstar*7.0e8/1.5e11/par.distance
+                # then find pixel size in arcseconds:
+                pixel_size_in_arcseconds  = pixsize_x_deg*3600.0            
+                # infer how many pixels are spawn by central star
+                nb_pixels_spawn_by_star = round(star_radius_in_arcseconds/pixel_size_in_arcseconds)
+                # ratio of integrated fluxes between star and disc
+                star_to_disc_flux_ratio = par.star_to_disc_flux_ratio  # 0.1
+                # finally get specific intensity of star emission in each pixel (assumed uniform)
+                # np.sum(im) = disc integrated flux 
+                # star_pixel x nb_pixels_spawn_by_star x nb_pixels_spawn_by_star = star integrated flux = star_to_disc_averaged_flux_ratio x disc integrated flux 
+                star_pixel = star_to_disc_flux_ratio*np.sum(im)/(nb_pixels_spawn_by_star*nb_pixels_spawn_by_star)  # star ~ square!...
+                # change im array accordingly
+                for i in range(-nb_pixels_spawn_by_star,nb_pixels_spawn_by_star+1):
+                    for j in range(-nb_pixels_spawn_by_star,nb_pixels_spawn_by_star+1):
+                        pixdist = np.sqrt(i*i + j*j)
+                        if pixdist <= nb_pixels_spawn_by_star:     # star ~ circle!...
+                            im[im_ny//2-i,im_nx//2-j] = star_pixel   
+
+            # if there's a central binary star, I will increase their intensity such that the total disc-to-stars flux ratio
+            # equals desired value
+            else:
+                # first find out grid's inner edge radius in arcseconds:
+                inner_edge_in_arcseconds = par.gas.rmed[0]*par.gas.culength/1.5e11/par.distance # 3.3 mas
+                inner_edge_in_arcseconds *= np.cos(par.inclination*np.pi/180.0)
+                # then find pixel size in arcseconds:
+                pixel_size_in_arcseconds  = pixsize_x_deg*3600.0            
+                # infer how many pixels are spawn by central star
+                nb_pixels_spawn_by_inneredge = round(inner_edge_in_arcseconds/pixel_size_in_arcseconds)
+                #print('inner_edge_in_arcseconds = ', inner_edge_in_arcseconds)
+                #print('nb_pixels_spawn_by_inneredge = ', nb_pixels_spawn_by_inneredge)
+                # change im array accordingly
+                current_stars_intensity = 0.0
+                for i in range(-nb_pixels_spawn_by_inneredge,nb_pixels_spawn_by_inneredge+1):
+                    for j in range(-nb_pixels_spawn_by_inneredge,nb_pixels_spawn_by_inneredge+1):
+                        pixdist = np.sqrt(i*i + j*j)
+                        if pixdist <= nb_pixels_spawn_by_inneredge:
+                            current_stars_intensity += im[im_ny//2-i,im_nx//2-j]
+                total_disc_flux = np.sum(im)
+                # print('stars current intensity = ', current_stars_intensity)
+                # print('ratio wrt disc = ', current_stars_intensity/total_disc_flux)
+                new_stars_intensity = 0.0
+                for i in range(-nb_pixels_spawn_by_inneredge,nb_pixels_spawn_by_inneredge+1):
+                    for j in range(-nb_pixels_spawn_by_inneredge,nb_pixels_spawn_by_inneredge+1):
+                        pixdist = np.sqrt(i*i + j*j)
+                        if pixdist <= nb_pixels_spawn_by_inneredge:
+                            im[im_ny//2-i,im_nx//2-j] *= (par.star_to_disc_flux_ratio*total_disc_flux/current_stars_intensity)
+                            new_stars_intensity += im[im_ny//2-i,im_nx//2-j]
+                # print('stars new intensity = ', new_stars_intensity)
+                # print('new ratio wrt disc = ', new_stars_intensity/total_disc_flux)
 
     # - - - - - -
     # dust polarized RT calculations
