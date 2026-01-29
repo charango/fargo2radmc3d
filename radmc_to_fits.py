@@ -251,7 +251,7 @@ def exportfits():
             else:
                 # first find out grid's inner edge radius in arcseconds:
                 inner_edge_in_arcseconds = par.gas.rmed[0]*par.gas.culength/1.5e11/par.distance # 3.3 mas
-                inner_edge_in_arcseconds *= np.cos(par.inclination*np.pi/180.0)
+                inner_edge_in_arcseconds *= 0.95*np.cos(par.inclination*np.pi/180.0) # 0.75 = safety factor! to avoid hitting the disc...
                 # then find pixel size in arcseconds:
                 pixel_size_in_arcseconds  = pixsize_x_deg*3600.0            
                 # infer how many pixels are spawn by central star
@@ -277,6 +277,42 @@ def exportfits():
                             new_stars_intensity += im[im_ny//2-i,im_nx//2-j]
                 # print('stars new intensity = ', new_stars_intensity)
                 # print('new ratio wrt disc = ', new_stars_intensity/total_disc_flux)
+
+        if (('TurnOffStars' in open('params.dat').read()) and (par.TurnOffStars == 'Yes')):
+            if par.central_binary == 'Yes':
+                # first find out grid's inner edge radius in arcseconds:
+                inner_edge_in_arcseconds = par.gas.rmed[0]*par.gas.culength/1.5e11/par.distance # 3.3 mas
+                inner_edge_in_arcseconds *= 0.95*np.cos(par.inclination*np.pi/180.0) # 0.75 = safety factor! to avoid hitting the disc...
+                # then find pixel size in arcseconds:
+                pixel_size_in_arcseconds  = pixsize_x_deg*3600.0            
+                # infer how many pixels are spawn by central star
+                nb_pixels_spawn_by_inneredge = round(inner_edge_in_arcseconds/pixel_size_in_arcseconds)
+                #print('inner_edge_in_arcseconds = ', inner_edge_in_arcseconds)
+                #print('nb_pixels_spawn_by_inneredge = ', nb_pixels_spawn_by_inneredge)
+                # change im array accordingly
+                current_stars_intensity = 0.0
+                for i in range(-nb_pixels_spawn_by_inneredge,nb_pixels_spawn_by_inneredge+1):
+                    for j in range(-nb_pixels_spawn_by_inneredge,nb_pixels_spawn_by_inneredge+1):
+                        pixdist = np.sqrt(i*i + j*j)
+                        if pixdist <= nb_pixels_spawn_by_inneredge:
+                            im[im_ny//2-i,im_nx//2-j] = 0.0
+
+        if (('TurnOffDisc' in open('params.dat').read()) and (par.TurnOffDisc == 'Yes')):
+            if par.central_binary == 'Yes':
+                # first find out grid's inner edge radius in arcseconds:
+                inner_edge_in_arcseconds = par.gas.rmed[0]*par.gas.culength/1.5e11/par.distance # 3.3 mas
+                inner_edge_in_arcseconds *= 0.95*np.cos(par.inclination*np.pi/180.0) # 0.75 = safety factor! to avoid hitting the disc...
+                # then find pixel size in arcseconds:
+                pixel_size_in_arcseconds  = pixsize_x_deg*3600.0            
+                # infer how many pixels are spawn by central star
+                nb_pixels_spawn_by_inneredge = round(inner_edge_in_arcseconds/pixel_size_in_arcseconds)
+                # change im array accordingly
+                for i in range(im_nx):
+                    for j in range(im_ny):
+                        pixdist = np.sqrt( (i-im_nx//2)*(i-im_nx//2) + (j-im_ny//2)*(j-im_ny//2) )
+                        if pixdist > nb_pixels_spawn_by_inneredge:
+                            im[i,j] = 0.0
+
 
     # - - - - - -
     # dust polarized RT calculations

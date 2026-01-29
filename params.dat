@@ -62,8 +62,11 @@ nbcores					1	  # how many cores do we use for radmc3D calculation?
 scat_mode				2	  # scattering mode max parameter (0: absorption, 2: anisotropic scattering)
 nb_photons				3e6	  # number of photos for raytracing
 nb_photons_scat			3e6	  # number of photos for raytracing (scattering)
+
 AddStarInRawImage		No	  # add star in specific intensity image?
 star_to_disc_flux_ratio	0.09  # if so, enter the total star-to-disc flux ratio at working wavelength
+TurnOffStars		No  	  # option to set to 0 the stars' intensity for testing purposes
+TurnOffDisc			No  	  # option to set to 0 the disc's intensity for testing purposes
 
 
 ### Dust size distribution
