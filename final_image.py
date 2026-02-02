@@ -145,8 +145,10 @@ def produce_final_image(input=''):
     # a) case with no polarized scattering
     if (par.polarized_scat == 'No' and par.plot_tau == 'No'):
         # Call to Gauss_filter function
-        if par.moment_order != 1:
+        if (par.moment_order != 1 and par.bmaj > 0.0 and par.bmin > 0.0):
             smooth = Gauss_filter(raw_intensity, stdev_x, stdev_y, par.bpaangle, Plot=False)
+        else:
+            smooth = raw_intensity
         if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
             smooth = raw_intensity
 
@@ -156,8 +158,12 @@ def produce_final_image(input=''):
             convolved_intensity = smooth 
         if par.brightness_temp=='No':
             convolved_intensity = smooth * 1e3 * beam   # mJy/beam
-
-        strflux = 'Flux of continuum emission [mJy/beam]'
+        if (par.bmaj == 0.0 and par.bmin == 0.0):
+            convolved_intensity = smooth/cdelt/cdelt    # Jy/arcsec^2
+            strflux = r'Intensity of continuum emission [Jy/arcsec$^2$]'
+        else:
+            strflux = 'Flux of continuum emission [mJy/beam]'
+        
         if par.gasspecies == 'co':
             strgas = r'$^{12}$CO'
         elif par.gasspecies == '13co':
@@ -177,7 +183,6 @@ def produce_final_image(input=''):
         if par.gasspecies == 'so' and par.iline == 14:
             strgas+=r' ($5_6 \rightarrow 4_5$)'
 
-    
         if par.brightness_temp=='Yes':
             # Gas RT and a single velocity channel
             if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.widthkms == 0.0:
@@ -198,14 +203,15 @@ def produce_final_image(input=''):
             if convolved_intensity.max() < 1.0 and ('max_colorscale' in open('params.dat').read()):
                 if not(par.max_colorscale == '#'):
                     if not(par.max_colorscale > 1.0):
-                        convolved_intensity = smooth * 1e6 * beam   # microJy/beam
-                        par.max_colorscale *= 1e3       # since max_colorscale originally in mJy/beam
-                        strflux = r'Flux of continuum emission [$\mu$Jy/beam]'
-                        # Gas RT and a single velocity channel
-                        if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.widthkms == 0.0:
-                            strflux = strgas+' intensity [$\mu$Jy/beam]'
-                        if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 0 and par.widthkms != 0.0:
-                            strflux = strgas+' integrated intensity [$\mu$Jy/beam km/s]'
+                        if (par.bmaj > 0.0 and par.bmin > 0.0):
+                            convolved_intensity = smooth * 1e6 * beam   # microJy/beam
+                            par.max_colorscale *= 1e3       # since max_colorscale originally in mJy/beam
+                            strflux = r'Flux of continuum emission [$\mu$Jy/beam]'
+                            # Gas RT and a single velocity channel
+                            if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.widthkms == 0.0:
+                                strflux = strgas+r' intensity [$\mu$Jy/beam]'
+                            if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 0 and par.widthkms != 0.0:
+                                strflux = strgas+r' integrated intensity [$\mu$Jy/beam km/s]'
 
         #
         if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
@@ -267,6 +273,8 @@ def produce_final_image(input=''):
         hdu.header['BUNIT'] = 'milliJY/BEAM'
     if strflux == r'Flux of continuum emission [$\mu$Jy/beam]':
         hdu.header['BUNIT'] = 'microJY/BEAM'
+    if strflux == r'Intensity of continuum emission [Jy/arcsec$^2$]':
+        hdu.header['BUNIT'] = 'JY/ARCSEC2'
     if strflux == '':
         hdu.header['BUNIT'] = ''
     hdu.header['BTYPE'] = 'FLUX DENSITY'
@@ -277,7 +285,10 @@ def produce_final_image(input=''):
     del hdu.header['EXTEND']
     hdu.data = convolved_intensity
     inbasename = os.path.basename('./'+outfile)
-    jybeamfileout=re.sub('.fits', '_JyBeam.fits', inbasename)
+    if (par.bmaj > 0.0 and par.bmin > 0.0):
+        jybeamfileout=re.sub('.fits', '_JyBeam.fits', inbasename)
+    else:
+        jybeamfileout=re.sub('.fits', '_JyArcsec.fits', inbasename)
     hdu.writeto(jybeamfileout, overwrite=True)
 
     # ----------------------------
@@ -430,19 +441,19 @@ def produce_final_image(input=''):
     # Normalization: linear or logarithmic scale
     if par.min_colorscale == '#':
         min = convolved_intensity.min()
-        if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
+        if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes' and par.r2_rescale == 'Yes':
             min = 0.0
     else:
         min = par.min_colorscale
     if par.max_colorscale == '#':
         max = convolved_intensity.max()
-        if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes':
+        if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'Yes' and par.r2_rescale == 'Yes':
             max = 1.0
     else:
         max = par.max_colorscale
     if par.log_colorscale == 'Yes':
         if par.min_colorscale == '#':
-            min = 1e-2*max
+            min = 1e-3*max
         else:
             min = par.min_colorscale
         # avoid negative values of array
@@ -461,9 +472,9 @@ def produce_final_image(input=''):
     if ( ('display_label' in open('params.dat').read()) and (par.display_label != '#') ):
         strlambda = par.display_label
     else:
-        strlambda = '$\lambda$='+str(round(lbda0, 2))+'mm' # round to 2 decimals
+        strlambda = r'$\lambda$='+str(round(lbda0, 2))+'mm' # round to 2 decimals
         if lbda0 < 0.01:
-            strlambda = '$\lambda$='+str(round(lbda0*1e3,2))+'$\mu$m'
+            strlambda = r'$\lambda$='+str(round(lbda0*1e3,2))+r'$\mu$m'
     ax.text(xlambda,dmax-0.166*da,strlambda, fontsize=20, color = 'white',weight='bold',horizontalalignment='left')
 
     if ( (('display_time' in open('params.dat').read()) and (par.display_time == 'Yes')) or (('spot_planet' in open('params.dat').read()) and (par.spot_planet == 'Yes')) ):
@@ -582,7 +593,7 @@ def produce_final_image(input=''):
         ax.contour(convolved_intensity,levels=10,color='black', linestyles='-',origin='lower',extent=[a0,a1,d0,d1])
     
     # plot beam
-    if par.plot_tau == 'No':
+    if par.plot_tau == 'No' and par.bmaj > 0.0 and par.bmin > 0.0:
         from matplotlib.patches import Ellipse
         e = Ellipse(xy=[xlambda,dmin+0.166*da], width=bmin, height=bmaj, angle=par.bpaangle+90.0)
         e.set_clip_box(ax.bbox)
@@ -615,7 +626,7 @@ def produce_final_image(input=''):
     # title on top
     cax.xaxis.set_label_position('top')
     cax.set_xlabel(strflux)
-    cax.xaxis.labelpad = 8
+    cax.xaxis.labelpad = 5 # 8
 
     plt.savefig('./'+fileout, dpi=160)
     plt.clf()
@@ -774,7 +785,8 @@ def produce_final_image(input=''):
                 cbar.ax.text(0.5, 4.5, strgas+' integrated intensity [mJy/beam km/s]', horizontalalignment='center', fontsize=20, transform=cbar.ax.transAxes)
 
             if (par.RTdust_or_gas == 'dust'):
-                cbar.ax.text(0.5, 4.5, 'Flux of continuum emission [mJy/beam]', horizontalalignment='center', fontsize=20, transform=cbar.ax.transAxes)
+                cbar.ax.text(0.5, 4.5, strflux, horizontalalignment='center', fontsize=20, transform=cbar.ax.transAxes)
+                #cbar.ax.text(0.5, 4.5, 'Flux of continuum emission [mJy/beam]', horizontalalignment='center', fontsize=20, transform=cbar.ax.transAxes)
 
             from matplotlib.ticker import MaxNLocator
             locator = MaxNLocator(nbins=5)
@@ -1077,7 +1089,7 @@ def produce_final_image(input=''):
                 if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
                     smooth = raw_intensity
 
-                strflux = 'Flux of continuum emission [mJy/beam]'
+                #strflux = 'Flux of continuum emission [mJy/beam]' # already defined above
                 if par.gasspecies == 'co':
                     strgas = r'$^{12}$CO'
                 elif par.gasspecies == '13co':
@@ -1132,6 +1144,8 @@ def produce_final_image(input=''):
                 hdu.header['BUNIT'] = 'milliJY/BEAM'
             if strflux == r'Flux of continuum emission [$\mu$Jy/beam]':
                 hdu.header['BUNIT'] = 'microJY/BEAM'
+            if strflux == r'Intensity of continuum emission [Jy/arcsec$^2$]':
+                hdu.header['BUNIT'] = 'JY/ARCSEC2'
             if strflux == '':
                 hdu.header['BUNIT'] = ''
             hdu.header['BTYPE'] = 'FLUX DENSITY'
@@ -1161,6 +1175,9 @@ def produce_final_image(input=''):
                     min = par.min_colorscale
                 # avoid negative values of array
                 moment1_minus_vK[moment1_minus_vK <= min] = min
+
+            min = -0.3
+            max = 0.3
 
             if par.log_colorscale == 'Yes':
                 mynorm = matplotlib.colors.LogNorm(vmin=min,vmax=max)
@@ -1489,7 +1506,7 @@ def produce_final_image(input=''):
                 cax.xaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=10))
             
             # plot beam
-            if par.plot_tau == 'No':
+            if par.plot_tau == 'No' and par.bmaj > 0.0 and par.bmin > 0.0:
                 from matplotlib.patches import Ellipse
                 e = Ellipse(xy=[xlambda,dmin+0.166*da], width=bmin, height=bmaj, angle=par.bpaangle+90.0)
                 e.set_clip_box(ax.bbox)

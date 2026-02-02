@@ -251,7 +251,7 @@ def exportfits():
             else:
                 # first find out grid's inner edge radius in arcseconds:
                 inner_edge_in_arcseconds = par.gas.rmed[0]*par.gas.culength/1.5e11/par.distance # 3.3 mas
-                inner_edge_in_arcseconds *= 0.95*np.cos(par.inclination*np.pi/180.0) # 0.75 = safety factor! to avoid hitting the disc...
+                inner_edge_in_arcseconds *= 0.9*np.cos(par.inclination*np.pi/180.0) # 0.75 = safety factor! to avoid hitting the disc...
                 # then find pixel size in arcseconds:
                 pixel_size_in_arcseconds  = pixsize_x_deg*3600.0            
                 # infer how many pixels are spawn by central star
@@ -282,7 +282,7 @@ def exportfits():
             if par.central_binary == 'Yes':
                 # first find out grid's inner edge radius in arcseconds:
                 inner_edge_in_arcseconds = par.gas.rmed[0]*par.gas.culength/1.5e11/par.distance # 3.3 mas
-                inner_edge_in_arcseconds *= 0.95*np.cos(par.inclination*np.pi/180.0) # 0.75 = safety factor! to avoid hitting the disc...
+                inner_edge_in_arcseconds *= 0.9*np.cos(par.inclination*np.pi/180.0) # 0.75 = safety factor! to avoid hitting the disc...
                 # then find pixel size in arcseconds:
                 pixel_size_in_arcseconds  = pixsize_x_deg*3600.0            
                 # infer how many pixels are spawn by central star
