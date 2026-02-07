@@ -220,12 +220,10 @@ def exportfits():
     # - - - - - -
     if par.RTdust_or_gas == 'dust' and par.polarized_scat == 'No':
         im = images.reshape(im_ny,im_nx)
-        # sometimes the intensity has a value at the origin that is
-        # unrealistically large. We put it to zero at the origin, as
-        # it should be in our disc model! (3pix x 3pix around)
-        if par.central_binary != 'No':
-            im[im_ny//2-1:im_ny//2+1,im_nx//2-1:im_nx//2+1] = 0.0
-        if (('AddStarInRawImage' in open('params.dat').read()) and (par.AddStarInRawImage == 'Yes')):
+            
+        # Here we rescale stars flux with used-defined prescribed total stars-to-disc flux ratio
+        # This is helpful when setting the dust temperature to the one in the hydrodynamical run
+        if (('AddStarInRawImage' in open('params.dat').read()) and (par.AddStarInRawImage == 'Yes') and (par.Tdust_eq_Thydro == 'Yes')):
             if par.central_binary == 'No':        
                 # first find out star's radius in arcseconds:
                 star_radius_in_arcseconds = par.rstar*7.0e8/1.5e11/par.distance
@@ -296,6 +294,9 @@ def exportfits():
                         pixdist = np.sqrt(i*i + j*j)
                         if pixdist <= nb_pixels_spawn_by_inneredge:
                             im[im_ny//2-i,im_nx//2-j] = 0.0
+
+            if par.central_binary == 'No':
+                im[im_ny//2-1:im_ny//2+1,im_nx//2-1:im_nx//2+1] = 0.0
 
         if (('TurnOffDisc' in open('params.dat').read()) and (par.TurnOffDisc == 'Yes')):
             if par.central_binary == 'Yes':
