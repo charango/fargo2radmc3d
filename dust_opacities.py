@@ -7,6 +7,22 @@ import os
 
 from makedustopac import *
 
+def round_to_n(x, n):
+    " Round x to n significant figures "
+    return round(x, -int(np.floor(np.sign(x) * np.log10(abs(x)))) + n)
+
+def str_fmt(x, n=2):
+    " Format x into nice Latex rounding to n"
+    power = np.floor(np.log10(round_to_n(x, 0)))
+    f_SF = round_to_n(x, n) * pow(10, -power)
+    if f_SF != 1.0:
+        mystr = "$"+format(f_SF,'.1f')+r"\times 10^{"+format(power,'.0f')+"}$"
+        return mystr
+    else:
+        mystr = r"$10^{"+format(power,'.0f')+"}$"
+        return mystr
+    
+
 def compute_dust_opacities():
 
     # Calculation of opacities uses the python scripts makedustopac.py and bhmie.py
@@ -168,8 +184,9 @@ def plot_opacities(species='mix_2species_porous',amin=0.1,amax=1000,nbin=10,lbda
         
     lbda1 *= 1e-3  # in mm
 
-    plt.loglog(sizes, absorption1, lw=2., linestyle = 'solid', color = par.c20[1], label='$\kappa_{abs}$ at '+str(lbda1)+' mm')
-    plt.loglog(sizes, absorption1+scattering1, lw=2., linestyle = 'dashed', color = par.c20[1], label='$\kappa_{abs}$+$\kappa_{sca}$ at '+str(lbda1)+' mm')
+    str_lamdba = '$\lambda=$'+str_fmt(lbda1)+' mm'
+    plt.loglog(sizes, absorption1, lw=2., linestyle = 'solid', color = par.c20[1], label='$\kappa_{abs}$ at '+str(str_lamdba))
+    plt.loglog(sizes, absorption1+scattering1, lw=2., linestyle = 'dashed', color = par.c20[1], label='$\kappa_{abs}$+$\kappa_{sca}$ at '+str(str_lamdba))
     plt.legend()
 
     plt.ylim(absorption1.min(),(absorption1+scattering1).max())
