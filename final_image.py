@@ -269,6 +269,10 @@ def produce_final_image(input=''):
     hdu.header['CUNIT2'] = 'deg     '
     hdu.header['CRPIX1'] = float((par.nbpixels+1.)/2.)
     hdu.header['CRPIX2'] = float((par.nbpixels+1.)/2.)
+    if par.polarized_scat == 'No':
+        hdu.header['CRVAL3'] = hdr['LBDAMIC']
+        hdu.header['CDELT3'] = float(0.0)
+        hdu.header['CUNIT3'] = 'MICRON'
     if strflux == 'Flux of continuum emission [mJy/beam]':
         hdu.header['BUNIT'] = 'milliJY/BEAM'
     if strflux == r'Flux of continuum emission [$\mu$Jy/beam]':

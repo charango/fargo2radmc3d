@@ -139,6 +139,10 @@ def exportfits():
             hdu.header['BTYPE'] = 'Intensity'
             hdu.header['BSCALE'] = float(1.0)
             hdu.header['BZERO'] = float(0.0)
+            if par.polarized_scat == 'No':
+                hdu.header['CRVAL3'] = float(lbda0)
+                hdu.header['CDELT3'] = float(0.0)
+                hdu.header['CUNIT3'] = 'MICRON'
             del hdu.header['EXTEND']
             hdu.data = images.astype('float32')
             hdu.writeto('image.fits', output_verify='fix', overwrite=False)
@@ -497,6 +501,10 @@ def exportfits():
     hdu.header['LBDAMIC'] = float(lbda0)
     hdu.header['CUNIT1'] = 'deg     '
     hdu.header['CUNIT2'] = 'deg     '
+    if par.polarized_scat == 'No':
+        hdu.header['CRVAL3'] = float(lbda0)
+        hdu.header['CDELT3'] = float(0.0)
+        hdu.header['CUNIT3'] = 'MICRON'
     hdu.header['CRPIX1'] = float((im_nx+1.)/2.)
     hdu.header['CRPIX2'] = float((im_ny+1.)/2.)
     if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 1:
@@ -566,6 +574,10 @@ def exportfits():
         hdu.header['CUNIT2'] = 'deg     '
         hdu.header['CRPIX1'] = float((im_nx+1.)/2.)
         hdu.header['CRPIX2'] = float((im_ny+1.)/2.)
+        if par.polarized_scat == 'No':
+            hdu.header['CRVAL3'] = float(lbda0)
+            hdu.header['CDELT3'] = float(0.0)
+            hdu.header['CUNIT3'] = 'MICRON'
         hdu.header['BUNIT'] = 'Jy/pixel'
         hdu.header['BTYPE'] = 'Intensity'
         hdu.header['BSCALE'] = float(1.0)
