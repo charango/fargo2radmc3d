@@ -95,14 +95,6 @@ def compute_dust_mass_surface_density():
             if (ibin >= 0 and ibin < par.nbin):
                 nparticles[ibin] += 1
                 avgstokes[ibin] += Stokes[m]
-
-                '''
-                k = ibin*par.gas.nsec*par.gas.nrad + jp*par.gas.nrad + ip
-                # this basically means we're injecting the whole
-                # particle mass in the cell where it is located, how
-                # about doing a more fancy interpolation scheme?
-                dust[k] +=1
-                '''
                 
                 # fill dust array based on particles mass
                 # interpolation scheme. The algorithm is the same as
@@ -297,16 +289,16 @@ def compute_dust_mass_surface_density():
                     dustcube[ibin,i,:] = 0.0 # *= ( (par.gas.rmed[i]/rmask_in_code_units)**(10.0) ) 
 
             # case we introduce 'by hand' a cavity in the dust (Baruteau et al. 2021)
-            if ('cavity_pol_int' in open('params.dat').read()) and (par.cavity_pol_int == 'Yes'):
-                agraincm = 1e2*par.dust_size[par.dustfluids[0]-1+ibin]
-                rhopart  = 2.7  # g/cm^3 (small grains)
-                mymin = dustcube[ibin,:,:].min()
-                for i in range(par.gas.nrad):
-                    for j in range(par.gas.nsec):
-                        # local Stokes number at R,phi
-                        st = 0.5*np.pi*agraincm*rhopart/(par.gas.data[i,j]*par.gas.cumass*1e3/(par.gas.culength*1e2)**2.)
-                        if st > 1e-4:  # 1e-4 or 1e-3 looks like a good threshold
-                            dustcube[ibin,i,j] = mymin
+            # if ('cavity_pol_int' in open('params.dat').read()) and (par.cavity_pol_int == 'Yes'):
+            #     agraincm = 1e2*par.dust_size[par.dustfluids[0]-1+ibin]
+            #     rhopart  = 2.7  # g/cm^3 (small grains)
+            #     mymin = dustcube[ibin,:,:].min()
+            #     for i in range(par.gas.nrad):
+            #         for j in range(par.gas.nsec):
+            #             # local Stokes number at R,phi
+            #             st = 0.5*np.pi*agraincm*rhopart/(par.gas.data[i,j]*par.gas.cumass*1e3/(par.gas.culength*1e2)**2.)
+            #             if st > 1e-4:  # 1e-4 or 1e-3 looks like a good threshold
+            #                 dustcube[ibin,i,j] = mymin
                     
                     
         if par.verbose == 'Yes':
@@ -321,7 +313,9 @@ def compute_dust_mass_surface_density():
 
     # -  -  -  -  -  -  -  -  -  -  -  -  -  -
     # CASE 2b: case of a Dusty FARGO-ADSG simulation 
-    # with dust modelled as a single-sized fluid
+    # with dust modelled as a single-sized fluid 
+    # or single-sized particles for which the particles 
+    # density is output by the simulation (pcdensON.dat)
     # -  -  -  -  -  -  -  -  -  -  -  -  -  - 
     if (par.fargo3d == 'No' and par.dustfluids != 'No'):
 
@@ -335,11 +329,25 @@ def compute_dust_mass_surface_density():
         # ------------------
         for ibin in range(par.nbin):
 
-            fileread = 'dustdens'+str(par.on)+'.dat'
+            # single dust fluid
+            if par.dustfluids != 'pc':
+                fileread = 'dustdens'+str(par.on)+'.dat'
+            # Lagrangian particles with single size, for which 
+            # the particles density has been already computed and 
+            # output by Dusty FARGO-ADSG
+            else:
+                fileread = 'pcdens'+str(par.on)+'.dat'
+            # case we assume the dust density is the same as the gas...
+            if ('use_gas_density' in open('params.dat').read() and par.use_gas_density == 'Yes'):
+                fileread = 'gasdens'+str(par.on)+'.dat'
             
             # read dust surface density for each dust fluid in code units
             dustcube[ibin,:,:]  = Field(field=fileread, directory=par.dir).data
         
+            # ... in which case we scale it by the dust-to-gas mass ratio parameter 'ratio' in params.dat
+            if ('use_gas_density' in open('params.dat').read() and par.use_gas_density == 'Yes'):
+                dustcube *= par.ratio
+
             if ('rescale_dust_fluid_density' in open('params.dat').read()) and (par.rescale_dust_fluid_density != 'No'):
                 dustcube *= par.rescale_dust_fluid_density # assumes parameter is a real in params.dat...
 
@@ -354,16 +362,16 @@ def compute_dust_mass_surface_density():
                     dustcube[ibin,i,:] = 0.0 # *= ( (par.gas.rmed[i]/rmask_in_code_units)**(10.0) ) 
 
             # case we introduce 'by hand' a cavity in the dust (Baruteau et al. 2021)
-            if ('cavity_pol_int' in open('params.dat').read()) and (par.cavity_pol_int == 'Yes'):
-                agraincm = 1e2*par.dust_size[par.dustfluids[0]-1+ibin]
-                rhopart  = 2.7  # g/cm^3 (small grains)
-                mymin = dustcube[ibin,:,:].min()
-                for i in range(par.gas.nrad):
-                    for j in range(par.gas.nsec):
-                        # local Stokes number at R,phi
-                        st = 0.5*np.pi*agraincm*rhopart/(par.gas.data[i,j]*par.gas.cumass*1e3/(par.gas.culength*1e2)**2.)
-                        if st > 1e-4:  # 1e-4 or 1e-3 looks like a good threshold
-                            dustcube[ibin,i,j] = mymin
+            # if ('cavity_pol_int' in open('params.dat').read()) and (par.cavity_pol_int == 'Yes'):
+            #     agraincm = 1e2*par.dust_size[par.dustfluids[0]-1+ibin]
+            #     rhopart  = 2.7  # g/cm^3 (small grains)
+            #     mymin = dustcube[ibin,:,:].min()
+            #     for i in range(par.gas.nrad):
+            #         for j in range(par.gas.nsec):
+            #             # local Stokes number at R,phi
+            #             st = 0.5*np.pi*agraincm*rhopart/(par.gas.data[i,j]*par.gas.cumass*1e3/(par.gas.culength*1e2)**2.)
+            #             if st > 1e-4:  # 1e-4 or 1e-3 looks like a good threshold
+            #                 dustcube[ibin,i,j] = mymin
                     
                     
         if par.verbose == 'Yes':
@@ -384,7 +392,7 @@ def compute_dust_mass_surface_density():
     # simulations, but can also be used for FARGO3D simulations carried out in
     # 2D for which dust fluids were included.
     # -  -  -  -  -  -  -  -  -  -  -  -  -  - 
-    if ( (par.fargo3d == 'No' and par.polarized_scat == 'Yes') or (par.fargo3d == 'Yes' and par.dustfluids == 'No') or (par.fargo3d == 'No' and par.polarized_scat == 'No' and ('use_gas_density' in open('params.dat').read()) and par.use_gas_density == 'Yes') ):
+    if ( (par.fargo3d == 'No' and par.polarized_scat == 'Yes') or (par.fargo3d == 'Yes' and par.dustfluids == 'No') or (par.fargo3d == 'No' and par.polarized_scat == 'No' and ('use_gas_density' in open('params.dat').read()) and par.use_gas_density == 'Yes' and len(par.bins) > 1) ):
 
         dustcube = dust.reshape(par.nbin, par.gas.nsec, par.gas.nrad)  
         dustcube = np.swapaxes(dustcube,1,2)  # means nbin, nrad, nsec
@@ -411,16 +419,16 @@ def compute_dust_mass_surface_density():
             dustcube[ibin,:,:] = par.ratio * par.gas.data * frac[ibin]
 
             # case we introduce 'by hand' a cavity in the dust (Baruteau et al. 2021)
-            if ('cavity_pol_int' in open('params.dat').read()) and (par.cavity_pol_int == 'Yes'):
-                agraincm = 10.0**(0.5*(np.log10(1e2*par.bins[ibin]) + np.log10(1e2*par.bins[ibin+1])))
-                rhopart  = 2.7  # g/cm^3 (small grains)
-                mymin = dustcube[ibin,:,:].min()
-                for i in range(par.gas.nrad):
-                    for j in range(par.gas.nsec):
-                        # local Stokes number at R,phi
-                        st = 0.5*np.pi*agraincm*rhopart/(par.gas.data[i,j]*par.gas.cumass*1e3/(par.gas.culength*1e2)**2.)
-                        if st > 1e-4:  # 1e-4 or 1e-3 looks like a good threshold
-                            dustcube[ibin,i,j] = mymin
+            # if ('cavity_pol_int' in open('params.dat').read()) and (par.cavity_pol_int == 'Yes'):
+            #     agraincm = 10.0**(0.5*(np.log10(1e2*par.bins[ibin]) + np.log10(1e2*par.bins[ibin+1])))
+            #     rhopart  = 2.7  # g/cm^3 (small grains)
+            #     mymin = dustcube[ibin,:,:].min()
+            #     for i in range(par.gas.nrad):
+            #         for j in range(par.gas.nsec):
+            #             # local Stokes number at R,phi
+            #             st = 0.5*np.pi*agraincm*rhopart/(par.gas.data[i,j]*par.gas.cumass*1e3/(par.gas.culength*1e2)**2.)
+            #             if st > 1e-4:  # 1e-4 or 1e-3 looks like a good threshold
+            #                 dustcube[ibin,i,j] = mymin
 
             # conversion in g/cm^2
             dustcube[ibin,:,:] *= (par.gas.cumass*1e3)/((par.gas.culength*1e2)**2.)  # dimensions: nbin, nrad, nsec
@@ -665,6 +673,17 @@ def compute_dust_mass_volume_density():
                     mysize = par.bins[ibin]
                 Stokes_fargo3d[ibin,:] = 0.5*np.pi*(mysize*1e2)*par.dust_internal_density/axirhogas  # since dust size is in meters...
                 #print('max Stokes number = ', Stokes_fargo3d[ibin,:].max())
+        #
+        # Dusty FARGO-ADSG with single dust fluid or using particles density -> particles single size
+        #
+        if (par.fargo3d == 'No' and par.dustfluids != 'No'):
+            Stokes_fargo2d = np.zeros((par.nbin,par.gas.nrad))
+            axirhogas = np.sum(par.gas.data,axis=1)/par.gas.nsec  # in code units
+            axirhogas *= (par.gas.cumass*1e3)/((par.gas.culength*1e2)**2.)  # in g/cm^2
+            for ibin in range(par.nbin):
+                mysize = par.dust_size
+                Stokes_fargo2d[ibin,:] = 0.5*np.pi*(mysize*1e2)*par.dust_internal_density/axirhogas  # since dust size is in meters...
+        #
 
         # For the vertical expansion of the dust mass volume density, we
         # need to define a 2D array for the dust's aspect ratio:
@@ -673,6 +692,8 @@ def compute_dust_mass_volume_density():
                 St = avgstokes[ibin]    # avg stokes number for that bin
             if par.fargo3d == 'Yes' and par.dustfluids != 'No':
                 St = Stokes_fargo3d[ibin]
+            if par.fargo3d == 'No' and par.dustfluids != 'No':
+                St = Stokes_fargo2d[ibin]
 
             # vertical extension depends on grain Stokes number:
             # T = theoretical: hd/hgas = sqrt(alpha/(St+alpha))

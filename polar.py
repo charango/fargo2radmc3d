@@ -61,7 +61,7 @@ def exec_polar_expansions(filename_source,workdir,PA,cosi,RA=False,DEC=False,alp
     hdr2['CRVAL1']=RA
     hdr2['CRVAL2']=DEC
 
-    resamp=gridding(filename_fullim,hdr2, fullWCS=False)
+    resamp=gridding(filename_fullim, hdr2, fullWCS=False)
     fileout_centered=re.sub('fullim.fits', 'centered.fits', filename_fullim)
     fits.writeto(fileout_centered,resamp, hdr2, overwrite=True)
 
@@ -136,6 +136,20 @@ def gridding(imagefile_1, imagefile_2,fileout=False,fullWCS=True):
     else:
         hdr2=imagefile_2
         
+    # need to remove whatever suggests a third dimension in the datacube here...
+    if 'CRVAL3' in hdr1:
+        del hdr1['CRVAL3']
+    if 'CDELT3' in hdr1:
+        del hdr1['CDELT3']
+    if 'CUNIT3' in hdr1:
+        del hdr1['CUNIT3']
+    if 'CUNIT3' in hdr2:
+       del hdr2['CRVAL3']
+    if 'CDELT3' in hdr2:
+        del hdr2['CDELT3']
+    if 'CUNIT3' in hdr2:
+        del hdr2['CUNIT3']
+
     w1 = WCS(hdr1)
     w2 = WCS(hdr2)
     

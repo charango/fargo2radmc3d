@@ -78,7 +78,7 @@ pindex			3.0			# minus power law exponent of dust size distribution
 ratio			5.0e-3		# dust-to-gas mass ratio
 nbin			10			# number of size bins
 z_expansion		T			# type of vertical expansion for dust density (T, T2 or F, only relevant for dust)
-
+override_alpha_viscosity	1.0e-2      # if set, manually impose disc's alpha turbulent viscosity (only if z_expansion = T or T2)
 
 ### Dust opacities
 species			mix_2species_ice70			# type of dust particles for opacity calculations (eg, mix_2species_ice70, mix_2species_60silicates_40carbons...)
@@ -87,7 +87,6 @@ opacity_dir	/home/cbaruteau/fargo/python/fargo2radmc3d/opac	# if so, name of dir
 
 
 ### options with polarized scattering
-cavity_pol_int     		No      # cavity profile for the gas density? (WEJ project)
 truncation_radius  		0.0		# truncation radius in arcsecond beyond which dust scale height is reduced
 mask_radius	   			0.0		# if non-zero, apply mask around star in Qphi PI image
 polarized_scat_field	Qphi	# either 'Qphi', 'I' (=Stokes I), or 'PI' (=sqrt(Q^2+U^2))

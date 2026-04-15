@@ -250,8 +250,32 @@ if fargo3d == 'Yes' and (RTdust_or_gas == 'dust' or RTdust_or_gas == 'both'):
     else:
         bins = np.logspace(np.log10(amin), np.log10(amax), nbin+1) 
 else:
-    bins = np.logspace(np.log10(amin), np.log10(amax), nbin+1) 
-        
+    if dustfluids != 'No':
+        command = awk_command+' " /^Rhopart/ " '+dir+'/*.par'
+        buf = subprocess.getoutput(command)
+        dust_internal_density = float(buf.split()[1])   # in g / cm^3
+        if dustfluids != 'pc':   
+            command = awk_command+' " /^Sizepart/ " '+dir+'/*.par'
+            buf = subprocess.getoutput(command)
+            dust_size = float(buf.split()[1])   # in meters
+            amin = dust_size
+            amax = dust_size
+            nbin = 1
+            bins = [dust_size]
+            dust_id = []
+        else:
+            command = awk_command+' " /^SizeMinPart/ " '+dir+'/*.par'
+            buf = subprocess.getoutput(command)
+            dust_size = float(buf.split()[1])   # in meters
+            amin = dust_size
+            amax = dust_size
+            nbin = 1
+            bins = [dust_size]
+            dust_id = []
+    else:
+        bins = np.logspace(np.log10(amin), np.log10(amax), nbin+1) 
+
+
 # label for the name of the image file created by RADMC3D
 if RTdust_or_gas == 'dust':
     label = dir+'_o'+str(on)+'_p'+str(pindex)+'_r'+str(ratio)+'_a'+str(amin)+'_'+str(amax)+'_nb'+str(nbin)+'_mode'+str(scat_mode)+'_np'+str('{:.0e}'.format(nb_photons))+'_nc'+str(ncol)+'_z'+str(z_expansion)+'_xf'+str(xaxisflip)+'_Td'+str(Tdust_eq_Thydro)
@@ -391,7 +415,10 @@ if fargo3d == 'Yes':
         viscosity = float(buf.split()[1])
         # simply set constant alpha value as nu / h^2 (ok at code's unit of length)
         alphaviscosity = viscosity * (aspectratio**(-2.0))
-            
+# Case we manually set the alpha turbulent viscosity via the params.dat parameter file
+if ('override_alpha_viscosity' in open('params.dat').read()) and isinstance(override_alpha_viscosity,float) == True:
+    alphaviscosity = override_alpha_viscosity
+
 # get the grid's radial spacing
 if fargo3d == 'No':
     command = awk_command+' " /^RadialSpacing/ " '+dir+'/*.par'
