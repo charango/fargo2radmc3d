@@ -53,7 +53,7 @@ def compute_hydro_temperature():
         # Allocate arrays
         gas_temp     = np.zeros((par.gas.ncol,par.gas.nrad,par.gas.nsec))
 
-        if "ISOTHERMAL" in open(par.dir+'summary'+str(on)+'.dat',"r").read():
+        if "ISOTHERMAL" in open(par.dir+'summary'+str(par.on)+'/.dat',"r").read():
             c_s = Field(field='gasenergy'+str(par.on)+'.dat', directory=par.dir).data  # in code units; gasenergyX.dat countains the values of the sound speed
             thydro = c_s*c_s            # in code units, the sound velocity c_s equals c_s = sqrt(T)
         else:
@@ -245,7 +245,7 @@ def plot_gas_temperature():
     if par.half_a_disc == 'No':
         midplane_col_index = par.gas.ncol//2-1
     else:
-        midplane_col_index = par.gas.ncol-1
+        midplane_col_index = par.gas.ncol//2-1 # par.gas.ncol-1 TBD!!
     surftemp = gas_temp[par.gas.ncol-1,:,:]
     midplanetemp = gas_temp[midplane_col_index,:,:]
             

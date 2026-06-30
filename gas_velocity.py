@@ -8,6 +8,7 @@ from field import *
 
 import matplotlib
 import matplotlib.pyplot as plt
+from astropy.io import fits
 
 # =========================
 # Microturbulent line broadening
@@ -200,7 +201,7 @@ def compute_gas_velocity():
         if par.half_a_disc == 'No':
             midplane_col_index = par.gas.ncol//2-1
         else:
-            midplane_col_index = par.gas.ncol-1
+            midplane_col_index = par.gas.ncol//2-1 # par.gas.ncol-1 TBD!!
 
         # midplane radial velocity:
         vrmid = vrad3D[midplane_col_index,:,:]/1e5 # nrad, nsec   # in km/s
@@ -346,6 +347,9 @@ def compute_gas_velocity():
         vtmid = np.roll(vtmid,shift=int(par.gas.nsec//2),axis=1)
         vtmid0 = vphi3D0[midplane_col_index,:,:]/1e5 # nrad, nsec  # in km/s
         vtmid0 = np.roll(vtmid0,shift=int(par.gas.nsec//2),axis=1)
+
+        # Cuidadin: testing what if vtmid0 is simply the azimuthally-averaged vtmid (june 2026)
+        vtmid0 = (np.sum(vtmid,axis=1)/par.gas.nsec).repeat(par.gas.nsec).reshape(par.gas.nrad,par.gas.nsec) # nrad, nsec  # in km/s
 
         # midplane vertical velocity:
         vzmid = vtheta3D[midplane_col_index,:,:]/1e5 # nrad, nsec  # in km/s
@@ -523,6 +527,45 @@ def compute_gas_velocity():
         fileout = 'vlos_residual_midplane.pdf'
         plt.savefig('./'+fileout, dpi=160)
         plt.close(fig)  # close figure as we reopen figure at every output number
+
+        # calculate physical scales
+        distance = par.distance * par.pc        # distance is in cm here
+        disc_size_in_au = (par.gas.rmed).max()*100.0*par.gas.culength/par.au # in au
+        pixsize_deg = 1.1*2.0*disc_size_in_au/par.distance/par.nbpixels/3600 
+        # above: it turns out RADMC-3D defines the camera's field of view to 
+        # be 1.1 times the full diameter of the target covered by the cylindrical 
+        # or spherical mesh!
+
+        # save in fits file
+        hdu = fits.PrimaryHDU()
+        hdu.header['BITPIX'] = -32    
+        hdu.header['NAXIS'] = 2  # 2
+        hdu.header['NAXIS1'] = par.nbpixels
+        hdu.header['NAXIS2'] = par.nbpixels
+        hdu.header['EPOCH']  = 2000.0
+        hdu.header['EQUINOX'] = 2000.0
+        hdu.header['LONPOLE'] = 180.0
+        hdu.header['CTYPE1'] = 'RA---SIN'
+        hdu.header['CTYPE2'] = 'DEC--SIN'
+        hdu.header['CRVAL1'] = float(0.0)
+        hdu.header['CRVAL2'] = float(0.0)
+        hdu.header['CDELT1'] = float(-1.*pixsize_deg)
+        hdu.header['CDELT2'] = float(pixsize_deg)
+        hdu.header['CUNIT1'] = 'deg     '
+        hdu.header['CUNIT2'] = 'deg     '
+        hdu.header['CRPIX1'] = float((par.nbpixels+1.)/2.)
+        hdu.header['CRPIX2'] = float((par.nbpixels+1.)/2.)
+        hdu.header['BUNIT'] = 'km/s'
+        hdu.header['BTYPE'] = 'RESIDUAL LOS VELOCITY'
+        hdu.header['BSCALE'] = 1
+        hdu.header['BZERO'] = 0
+        hdu.header['BMAJ'] = par.bmaj
+        hdu.header['BMIN'] = par.bmin
+        del hdu.header['EXTEND']
+        hdu.data = v_los_residual
+        jybeamfileout='vlos_residual_midplane.fits'
+        hdu.writeto(jybeamfileout, overwrite=True)        
+
 
     if par.hydro2D == 'Yes':
         del vrad3D_cyl, vphi3D_cyl, vphi3D0_cyl
