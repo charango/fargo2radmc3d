@@ -60,17 +60,18 @@ class Mesh():
                 print('IOError')
             
             # check if 3D simulation covers half a disk only in the latitudinal direction 
-            command = par.awk_command+' " /^ZMAX/ " '+directory+'/variables.par'
-            if sys.version_info[0] < 3:   # python 2.X
-                buf = subprocess.check_output(command, shell=True)
-            else:                         # python 3.X
-                buf = subprocess.getoutput(command)
-            zmax = float(buf.split()[1])
+            # command = par.awk_command+' " /^ZMAX/ " '+directory+'/variables.par'
+            # if sys.version_info[0] < 3:   # python 2.X
+            #     buf = subprocess.check_output(command, shell=True)
+            # else:                         # python 3.X
+            #     buf = subprocess.getoutput(command)
+            # zmax = float(buf.split()[1])
 
             # We can't do mirror symmetry in RADMC3D when scattering_mode_max = 2
             # (i.e., when anisotropic scattering is assumed). We need to define the
             # grid's colatitude on both sides about the disc midplane:
-            if np.abs(zmax - 1.57) < 0.01:             # half disk
+            # if np.abs(zmax - 1.57) < 0.01:             # half disk # deprecated
+            if par.half_a_disc == 'Yes':
                 ym_lower = domain_col[3:-3]            # lat-edge
                 # Below: need to check...
                 ym_lower = ym_lower[::-1]

@@ -8,7 +8,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from scipy.ndimage import map_coordinates
 from pylab import *
-
+import re
 from beam import *
 
 # -------------------------
@@ -378,7 +378,10 @@ def exportfits():
                 
             # keep track of beam-convolved specific intensity in each channel map
             if par.plot_tau == 'No':
-                smooth = Gauss_filter(im, stdev_x, stdev_y, par.bpaangle, Plot=False) + 1e-20  # avoid division by zeros w/o noise...
+                if (par.bmaj > 0 and par.bmin > 0):
+                    smooth = Gauss_filter(im, stdev_x, stdev_y, par.bpaangle, Plot=False) + 1e-20  # avoid division by zeros w/o noise...
+                else:
+                    smooth = im
                 if par.intensity_inJyperpixel_inrawdatacube == 'No':
                     intensity_in_each_channel[i,0,:,:] = smooth*fluxfactor*beam  # in Jy/beam
                 else:
@@ -468,9 +471,15 @@ def exportfits():
                         fact = 1.0
 
                     # substract the keplerian velocity at each [y,x]
-                    if r_cu > par.gas.redge.min() and r_cu < par.gas.redge.max():
-                        vK_obs = 1e-5 * math.sin(par.inclination*math.pi/180.0) * math.cos(phi) * (1e3*par.gas.cumass*par.G/r)**0.5 * fact       # compute v_K_app(x,y)
-                        moment1_minus_vK[y,x] = im[y,x] - vK_obs
+                    # if r_cu > par.gas.redge.min() and r_cu < par.gas.redge.max():
+                    #     vK_obs = 1e-5 * math.sin(par.inclination*math.pi/180.0) * math.cos(phi) * (1e3*par.gas.cumass*par.G/r)**0.5 * fact       # compute v_K_app(x,y)
+                    #     # moment1_minus_vK[y,x] = im[y,x] - vK_obs
+                    #     # moment1_minus_vK[y,x] = vK_obs
+                    #     moment1_minus_vK[y,x] = 1.0 # im[y,x]
+
+                    # cuidadin
+                    vK_obs = 1e-5 * math.sin(par.inclination*math.pi/180.0) * math.cos(phi) * (1e3*par.gas.cumass*par.G/r)**0.5 * fact       # compute v_K_app(x,y)
+                    moment1_minus_vK[y,x] = im[y,x] - vK_obs
 
 
     # ----------

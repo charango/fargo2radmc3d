@@ -94,6 +94,11 @@ class Field(Mesh):
             
         self.data = self.__open_field(directory+field,dtype) # scalar data is here.
 
+        # To be checked later!
+        if par.half_a_disc == 'Yes':
+            self.ncol *= 2 
+
+
     def __open_field(self, f, dtype):
         """
         Reading the data

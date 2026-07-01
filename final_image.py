@@ -199,7 +199,10 @@ def produce_final_image(input=''):
                 strflux = strgas+' intensity [mJy/beam]'
             # Gas RT and mooment order 0 map
             if (par.RTdust_or_gas == 'gas' or par.RTdust_or_gas == 'both') and par.moment_order == 0 and par.widthkms != 0.0:
-                strflux = strgas+' integrated intensity [mJy/beam km/s]'
+                if (par.bmaj > 0.0 and par.bmin > 0.0):
+                    strflux = strgas+' integrated intensity [mJy/beam km/s]'
+                else:
+                    strflux = strgas+' integrated intensity [Jy/arcsec$^2$ km/s]'
             if convolved_intensity.max() < 1.0 and ('max_colorscale' in open('params.dat').read()):
                 if not(par.max_colorscale == '#'):
                     if not(par.max_colorscale > 1.0):
@@ -372,6 +375,7 @@ def produce_final_image(input=''):
     # plotting image panel
     # --------------------
     matplotlib.rcParams.update({'font.size': 20})
+    # matplotlib.rcParams.update({'font.size': 24})
     matplotlib.rc('font', family='Arial') 
     '''
     plt.rcParams['font.family'] = 'DeJavu Serif'

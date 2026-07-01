@@ -254,15 +254,19 @@ else:
         command = awk_command+' " /^Rhopart/ " '+dir+'/*.par'
         buf = subprocess.getoutput(command)
         dust_internal_density = float(buf.split()[1])   # in g / cm^3
-        if dustfluids != 'pc':   
-            command = awk_command+' " /^Sizepart/ " '+dir+'/*.par'
-            buf = subprocess.getoutput(command)
-            dust_size = float(buf.split()[1])   # in meters
-            amin = dust_size
-            amax = dust_size
-            nbin = 1
-            bins = [dust_size]
-            dust_id = []
+        if dustfluids != 'pc':
+            if nbin == 1:
+                command = awk_command+' " /^Sizepart/ " '+dir+'/*.par'
+                buf = subprocess.getoutput(command)
+                dust_size = float(buf.split()[1])   # in meters
+                amin = dust_size
+                amax = dust_size
+                # nbin = 1
+                bins = [dust_size]
+                dust_id = []
+            else:
+                bins = np.logspace(np.log10(amin), np.log10(amax), nbin) 
+                dust_size = bins
         else:
             command = awk_command+' " /^SizeMinPart/ " '+dir+'/*.par'
             buf = subprocess.getoutput(command)

@@ -57,10 +57,21 @@ def compute_dust_opacities():
     for ibin in range(int(par.nbin)):
         # median grain size in cm in current bin size:
         if par.fargo3d == 'No':
-            if len(par.bins) != 1:
-                agraincm = 10.0**(0.5*(np.log10(1e2*par.bins[ibin]) + np.log10(1e2*par.bins[ibin+1])))
+            if (par.dustfluids == 'Yes' and par.dustfluids != 'pc'):
+                if len(par.bins) != 1:
+                    agraincm = 1e2*par.amin*(par.amax/par.amin)**(ibin/(par.nbin-1))
+                else:
+                    agraincm = 1e2*par.bins[ibin]
+                # print('par.amin = ', par.amin)
+                # print('par.amax = ', par.amax)
+                # print('ibin = ', ibin)
+                # print('nbin = ', par.nbin)
+                # print('agraincm = ', agraincm)
             else:
-                agraincm = 1e2*par.bins[ibin]
+                if len(par.bins) != 1:
+                    agraincm = 10.0**(0.5*(np.log10(1e2*par.bins[ibin]) + np.log10(1e2*par.bins[ibin+1])))
+                else:
+                    agraincm = 1e2*par.bins[ibin]
         else:
             if par.dustfluids != 'No':
                 agraincm = 1e2*par.dust_size[par.dustfluids[0]-1+ibin]

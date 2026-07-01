@@ -329,27 +329,42 @@ def compute_dust_mass_surface_density():
         # ------------------
         for ibin in range(par.nbin):
 
-            # single dust fluid
-            if par.dustfluids != 'pc':
-                fileread = 'dustdens'+str(par.on)+'.dat'
-            # Lagrangian particles with single size, for which 
-            # the particles density has been already computed and 
-            # output by Dusty FARGO-ADSG
-            else:
-                fileread = 'pcdens'+str(par.on)+'.dat'
-            # case we assume the dust density is the same as the gas...
-            if ('use_gas_density' in open('params.dat').read() and par.use_gas_density == 'Yes'):
-                fileread = 'gasdens'+str(par.on)+'.dat'
+            if par.nbin == 1:
+                # single dust fluid
+                if par.dustfluids != 'pc':
+                    fileread = 'dustdens'+str(par.on)+'.dat'
+                # Lagrangian particles with single size, for which 
+                # the particles density has been already computed and 
+                # output by Dusty FARGO-ADSG
+                else:
+                    fileread = 'pcdens'+str(par.on)+'.dat'
+                # case we assume the dust density is the same as the gas...
+                if ('use_gas_density' in open('params.dat').read() and par.use_gas_density == 'Yes'):
+                    fileread = 'gasdens'+str(par.on)+'.dat'
+                
+                # read dust surface density for each dust fluid in code units
+                dustcube[ibin,:,:]  = Field(field=fileread, directory=par.dir).data
             
-            # read dust surface density for each dust fluid in code units
-            dustcube[ibin,:,:]  = Field(field=fileread, directory=par.dir).data
-        
-            # ... in which case we scale it by the dust-to-gas mass ratio parameter 'ratio' in params.dat
-            if ('use_gas_density' in open('params.dat').read() and par.use_gas_density == 'Yes'):
-                dustcube *= par.ratio
+                # ... in which case we scale it by the dust-to-gas mass ratio parameter 'ratio' in params.dat
+                if ('use_gas_density' in open('params.dat').read() and par.use_gas_density == 'Yes'):
+                    dustcube *= par.ratio
 
-            if ('rescale_dust_fluid_density' in open('params.dat').read()) and (par.rescale_dust_fluid_density != 'No'):
-                dustcube *= par.rescale_dust_fluid_density # assumes parameter is a real in params.dat...
+                if ('rescale_dust_fluid_density' in open('params.dat').read()) and (par.rescale_dust_fluid_density != 'No'):
+                    dustcube *= par.rescale_dust_fluid_density # assumes parameter is a real in params.dat...
+
+            # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+            # Special case: 2026 GI project 
+            # we assume 2 bins: one for which we take the rescaled gas surface density, and 
+            # another one for which we read the dust density surface density
+            if par.nbin == 2:
+                if ibin == 0:
+                    fileread = 'gasdens'+str(par.on)+'.dat'
+                    dustcube[ibin,:,:]  = Field(field=fileread, directory=par.dir).data
+                    dustcube[ibin,:,:] *= par.rescale_dust_fluid_density
+                if ibin == 1:
+                    fileread = 'dustdens'+str(par.on)+'.dat'
+                    dustcube[ibin,:,:]  = Field(field=fileread, directory=par.dir).data
+            # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
             # conversion in g/cm^2
             dustcube[ibin,:,:] *= (par.gas.cumass*1e3)/((par.gas.culength*1e2)**2.)  # dimensions: nbin, nrad, nsec
@@ -373,7 +388,8 @@ def compute_dust_mass_surface_density():
             #             if st > 1e-4:  # 1e-4 or 1e-3 looks like a good threshold
             #                 dustcube[ibin,i,j] = mymin
                     
-                    
+            print('Total dust mass [Mgas] in bin ', ibin, ' is ', np.sum(dustcube[ibin,:,:]*surface*(par.gas.culength*1e2)**2.)/(Mgas*par.gas.cumass*1e3))
+
         if par.verbose == 'Yes':
             print('Total dust mass [g] = ', np.sum(dustcube[:,:,:]*surface*(par.gas.culength*1e2)**2.))
             print('Total dust mass [Mgas] = ', np.sum(dustcube[:,:,:]*surface*(par.gas.culength*1e2)**2.)/(Mgas*par.gas.cumass*1e3))
@@ -481,7 +497,12 @@ def compute_dust_mass_volume_density():
             fileread = 'dust'+str(index)+'dens'+str(par.on)+'.dat'
             
             # read dust mass volume density for each dust fluid in code units
-            dustcube[ibin,:,:,:] = Field(field=fileread, directory=par.dir).data
+            if par.half_a_disc == 'No':
+                dustcube[ibin,:,:,:] = Field(field=fileread, directory=par.dir).data
+            else:
+                # check if there's any issue whether ncol is odd or even
+                dustcube[ibin,0:par.gas.ncol//2-1,:,:] = Field(field=fileread, directory=par.dir).data
+                dustcube[ibin,par.gas.ncol-1:par.gas.ncol//2,:,:] = dustcube[ibin,0:par.gas.ncol//2-1,:,:]
 
             # conversion in g/cm^3
             dustcube[ibin,:,:,:] *= (par.gas.cumass*1e3)/((par.gas.culength*1e2)**3.)  # dimensions: nbin, ncol, nrad, nsec
@@ -681,7 +702,10 @@ def compute_dust_mass_volume_density():
             axirhogas = np.sum(par.gas.data,axis=1)/par.gas.nsec  # in code units
             axirhogas *= (par.gas.cumass*1e3)/((par.gas.culength*1e2)**2.)  # in g/cm^2
             for ibin in range(par.nbin):
-                mysize = par.dust_size
+                if par.nbin == 1:
+                    mysize = par.dust_size
+                else:
+                    mysize = par.dust_size[ibin]
                 Stokes_fargo2d[ibin,:] = 0.5*np.pi*(mysize*1e2)*par.dust_internal_density/axirhogas  # since dust size is in meters...
         #
 
@@ -755,6 +779,7 @@ def compute_dust_mass_volume_density():
     if par.verbose == 'Yes':
         for j in range(par.gas.ncol):
             print('max(rho_dustcube) [g cm-3] for colatitude index j = ', j, ' = ', rhodustcube[j,:,:,:].max())
+        
                         
     # If writing data in an ascii file the ordering should be: nbin, nsec, ncol, nrad.
     # We therefore need to swap axes of array rhodustcube
@@ -834,7 +859,7 @@ def plot_dust_density(mystring):
     if par.half_a_disc == 'No':
         midplane_col_index = par.gas.ncol//2-1
     else:
-        midplane_col_index = par.gas.ncol-1
+        midplane_col_index = par.gas.ncol//2-1 # par.gas.ncol-1 TBD!!
 
     # plot azimuthally-averaged dust density vs. radius and colatitude for smallest and largest bin sizes
 
@@ -1070,7 +1095,7 @@ def plot_dust_to_gas_density():
     if par.half_a_disc == 'No':
         midplane_col_index = par.gas.ncol//2-1
     else:
-        midplane_col_index = par.gas.ncol-1
+        midplane_col_index = par.gas.ncol//2-1 # par.gas.ncol-1 TBD!!
     midplane_dust_to_gas_density_ratio = dust_to_gas_density_ratio[:,midplane_col_index,:] # nsec nrad  
     
     # X and Y arrays
