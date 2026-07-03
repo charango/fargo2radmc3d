@@ -15,6 +15,7 @@
 # =================================
 # - add text banner with 'banner' command
 # - check again that all goes well without x-axisflip!
+# - implement use_gas_density for 3D simulations with FARGO3D?
 # =================================
 
 

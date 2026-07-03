@@ -66,8 +66,8 @@ nb_photons_scat			3e6	  # number of photos for raytracing (scattering)
 
 AddStarInRawImage		No	  # add star in specific intensity image?
 star_to_disc_flux_ratio	0.09  # if so, enter the total star-to-disc flux ratio at working wavelength
-TurnOffStars		No  	  # option to set to 0 the stars' intensity for testing purposes
-TurnOffDisc			No  	  # option to set to 0 the disc's intensity for testing purposes
+TurnOffStars			Yes   # option to set to 0 the stars' intensity for testing purposes (now the cae by default!)
+TurnOffDisc				No    # option to set to 0 the disc's intensity for testing purposes
 
 
 ### Dust size distribution

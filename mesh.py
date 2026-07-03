@@ -72,13 +72,11 @@ class Mesh():
             # grid's colatitude on both sides about the disc midplane:
             # if np.abs(zmax - 1.57) < 0.01:             # half disk # deprecated
             if par.half_a_disc == 'Yes':
-                ym_lower = domain_col[3:-3]            # lat-edge
-                # Below: need to check...
-                ym_lower = ym_lower[::-1]
+                ym_lower = domain_col[3:-3]
                 # then define array of colatitudes below midplane
                 ym_upper = np.pi-ym_lower
                 # and finally concatenate
-                ym = np.concatenate([ym_lower[::-1],ym_upper])
+                ym = np.concatenate([ym_lower[:-1],ym_upper[::-1]])
             else:
                 ym = domain_col[3:-3]           # lat-edge
             
